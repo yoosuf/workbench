@@ -1,0 +1,176 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum WorkspaceRole {
+  OWNER
+  ADMIN
+  MEMBER
+  READONLY
+}
+
+enum ConnectionAccessLevel {
+  ADMIN
+  WRITE
+  READ
+}
+
+enum Engine {
+  MYSQL
+  POSTGRES
+}
+
+model User {
+  id                    String                 @id @default(uuid())
+  email                 String                 @unique
+  passwordHash          String
+  workspaceMemberships  WorkspaceMember[]
+  teamMemberships       TeamMember[]
+  connections           Connection[]
+  connectionPermissions ConnectionPermission[]
+  notifications         InAppNotification[]
+  createdAt             DateTime               @default(now())
+}
+
+model Workspace {
+  id          String            @id @default(uuid())
+  name        String
+  slug        String            @unique
+  members     WorkspaceMember[]
+  teams       Team[]
+  connections Connection[]
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+}
+
+model WorkspaceMember {
+  id          String        @id @default(uuid())
+  workspaceId String
+  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role        WorkspaceRole @default(MEMBER)
+  createdAt   DateTime      @default(now())
+
+  @@unique([workspaceId, userId])
+}
+
+model Team {
+  id                    String                     @id @default(uuid())
+  workspaceId           String
+  workspace             Workspace                  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  name                  String
+  slug                  String
+  description           String?
+  members               TeamMember[]
+  connectionPermissions TeamConnectionPermission[]
+  createdAt             DateTime                   @default(now())
+  updatedAt             DateTime                   @updatedAt
+
+  @@unique([workspaceId, slug])
+}
+
+model TeamMember {
+  id        String   @id @default(uuid())
+  teamId    String
+  team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([teamId, userId])
+}
+
+model TeamConnectionPermission {
+  id           String                @id @default(uuid())
+  teamId       String
+  team         Team                  @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  connectionId String
+  connection   Connection            @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  accessLevel  ConnectionAccessLevel @default(READ)
+  createdAt    DateTime              @default(now())
+
+  @@unique([teamId, connectionId])
+}
+
+model Connection {
+  id                      String                     @id @default(uuid())
+  workspaceId             String?
+  workspace               Workspace?                 @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  userId                  String
+  user                    User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name                    String
+  engine                  Engine
+  host                    String
+  port                    Int
+  database                String
+  username                String
+  encryptedPassword       String
+  accessLevel             ConnectionAccessLevel      @default(WRITE)
+  permissions             ConnectionPermission[]
+  teamPermissions         TeamConnectionPermission[]
+  savedQueries            SavedQuery[]
+  queryHistory            QueryHistory[]
+  diagrams                Diagram[]
+  createdAt               DateTime                   @default(now())
+}
+
+model ConnectionPermission {
+  id           String                @id @default(uuid())
+  connectionId String
+  connection   Connection            @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessLevel  ConnectionAccessLevel @default(READ)
+  createdAt    DateTime              @default(now())
+
+  @@unique([connectionId, userId])
+}
+
+model InAppNotification {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  message   String
+  type      String   @default("INFO")
+  data      Json?
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+model SavedQuery {
+  id           String     @id @default(uuid())
+  connectionId String
+  connection   Connection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  name         String
+  sql          String
+  createdAt    DateTime   @default(now())
+}
+
+model QueryHistory {
+  id           String     @id @default(uuid())
+  connectionId String
+  connection   Connection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  sql          String
+  executedAt   DateTime   @default(now())
+  durationMs   Int
+  rowCount     Int?
+  success      Boolean
+  errorMessage String?
+}
+
+model Diagram {
+  id           String     @id @default(uuid())
+  connectionId String
+  connection   Connection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  name         String
+  layout       Json
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+}

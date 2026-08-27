@@ -1,0 +1,45 @@
+services:
+  app-postgres:
+    image: postgres:16-alpine
+    container_name: workbench-app-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgrespassword
+      POSTGRES_DB: workbench_app
+    ports:
+      - "5431:5432"
+    volumes:
+      - app_postgres_data:/var/lib/postgresql/data
+
+  target-postgres:
+    image: postgres:16-alpine
+    container_name: workbench-target-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgrespassword
+      POSTGRES_DB: sample_ecommerce
+    ports:
+      - "5433:5432"
+    volumes:
+      - ./docker/postgres/target-postgres-init.sql:/docker-entrypoint-initdb.d/init.sql
+      - target_postgres_data:/var/lib/postgresql/data
+
+  target-mysql:
+    image: mysql:8.4
+    container_name: workbench-target-mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: mysqlpassword
+      MYSQL_DATABASE: sample_ecommerce
+    ports:
+      - "3307:3306"
+    volumes:
+      - ./docker/mysql/target-mysql-init.sql:/docker-entrypoint-initdb.d/init.sql
+      - target_mysql_data:/var/lib/mysql
+
+volumes:
+  app_postgres_data:
+  target_postgres_data:
+  target_mysql_data:

@@ -1,0 +1,284 @@
+@import "tailwindcss";
+
+:root {
+  /* GitHub Light Default Palette (Variables) */
+  --bg-canvas: #ffffff;
+  --bg-surface: #f6f8fa;
+  --bg-subtle: #eaeef2;
+  --bg-inset: #f3f4f6;
+  --border-default: #d0d7de;
+  --border-subtle: #d8dee4;
+  --fg-default: #1f2328;
+  --fg-muted: #656d76;
+  --fg-heading: #1f2328;
+  --accent-fg: #0969da;
+  --accent-emphasis: #0969da;
+  --accent-muted: rgba(9, 105, 218, 0.1);
+  --success-fg: #1a7f37;
+  --warning-fg: #9a6700;
+  --danger-fg: #cf222e;
+
+  /* shadcn/ui semantic tokens */
+  --background: 0 0% 100%;
+  --foreground: 220 14% 14%;
+  --card: 0 0% 100%;
+  --card-foreground: 220 14% 14%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 220 14% 14%;
+  --primary: 212 92% 45%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 210 20% 96%;
+  --secondary-foreground: 220 14% 14%;
+  --muted: 210 20% 96%;
+  --muted-foreground: 215 8% 43%;
+  --accent: 210 20% 96%;
+  --accent-foreground: 220 14% 14%;
+  --destructive: 0 72% 51%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 210 18% 87%;
+  --input: 210 18% 87%;
+  --ring: 212 92% 45%;
+  --radius: 0.625rem;
+}
+
+.dark {
+  /* GitHub Dark Default Palette (Variables) */
+  --bg-canvas: #0d1117;
+  --bg-surface: #161b22;
+  --bg-subtle: #21262d;
+  --bg-inset: #010409;
+  --border-default: #30363d;
+  --border-muted: #21262d;
+  --fg-default: #c9d1d9;
+  --fg-muted: #8b949e;
+  --fg-heading: #f0f6fc;
+  --accent-fg: #58a6ff;
+  --accent-emphasis: #1f6feb;
+  --accent-muted: rgba(56, 189, 248, 0.1);
+  --success-fg: #3fb950;
+  --warning-fg: #d29922;
+  --danger-fg: #f85149;
+
+  /* shadcn/ui semantic tokens */
+  --background: 216 28% 7%;
+  --foreground: 210 17% 82%;
+  --card: 216 20% 11%;
+  --card-foreground: 210 17% 82%;
+  --popover: 216 20% 11%;
+  --popover-foreground: 210 17% 82%;
+  --primary: 212 92% 67%;
+  --primary-foreground: 216 28% 7%;
+  --secondary: 216 14% 15%;
+  --secondary-foreground: 210 17% 82%;
+  --muted: 216 14% 15%;
+  --muted-foreground: 215 8% 58%;
+  --accent: 216 14% 15%;
+  --accent-foreground: 210 17% 82%;
+  --destructive: 0 84% 63%;
+  --destructive-foreground: 216 28% 7%;
+  --border: 216 12% 21%;
+  --input: 216 12% 21%;
+  --ring: 212 92% 67%;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  background-color: var(--bg-canvas);
+  color: var(--fg-default);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+  user-select: none;
+  overflow: hidden;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+code, pre, .font-mono {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+}
+
+/* GitHub style custom scrollbars */
+::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-canvas);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-default);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--fg-muted);
+}
+
+/* Light / Dark Mode Color Scheme */
+.light {
+  color-scheme: light;
+}
+
+.dark {
+  color-scheme: dark;
+}
+
+/* ==========================================================================
+   LIGHT THEME DESIGN TOKEN OVERRIDES
+   Guarantees 100% pure GitHub Light look across all components & routes
+   ========================================================================== */
+
+/* Canvases & Base Backgrounds */
+.light,
+.light body,
+.light [class*="bg-dark-950"],
+.light [class*="bg-[#0d1117]"],
+.light .bg-\[\#0d1117\] {
+  background-color: #ffffff !important;
+}
+
+.light [class*="bg-dark-900"],
+.light [class*="bg-[#161b22]"],
+.light .bg-\[\#161b22\] {
+  background-color: #f6f8fa !important;
+}
+
+.light [class*="bg-dark-850"],
+.light [class*="bg-dark-800"],
+.light [class*="bg-[#21262d]"],
+.light .bg-\[\#21262d\] {
+  background-color: #eaeef2 !important;
+}
+
+.light [class*="bg-[#010409]"],
+.light .bg-\[\#010409\] {
+  background-color: #f3f4f6 !important;
+}
+
+/* Borders */
+.light [class*="border-dark-"],
+.light [class*="border-[#30363d]"],
+.light .border-\[\#30363d\] {
+  border-color: #d0d7de !important;
+}
+
+.light [class*="border-[#21262d]"],
+.light .border-\[\#21262d\] {
+  border-color: #d8dee4 !important;
+}
+
+/* Typography & Foregrounds */
+.light [class*="text-slate-100"],
+.light [class*="text-slate-200"],
+.light [class*="text-[#c9d1d9]"],
+.light .text-\[\#c9d1d9\] {
+  color: #1f2328 !important;
+}
+
+.light [class*="text-slate-400"],
+.light [class*="text-slate-500"],
+.light [class*="text-[#8b949e]"],
+.light .text-\[\#8b949e\] {
+  color: #656d76 !important;
+}
+
+.light h1.text-white,
+.light h2.text-white,
+.light h3.text-white,
+.light h4.text-white,
+.light span.text-white,
+.light p.text-white,
+.light div.text-white,
+.light .text-white {
+  color: #1f2328 !important;
+}
+
+/* Inputs & Form Controls */
+.light input,
+.light select,
+.light textarea {
+  background-color: #ffffff !important;
+  color: #1f2328 !important;
+  border-color: #d0d7de !important;
+}
+
+.light input::placeholder,
+.light textarea::placeholder {
+  color: #8c959f !important;
+}
+
+/* Buttons & Hovers */
+.light .hover\:bg-\[\#21262d\]:hover,
+.light [class*="hover:bg-dark-"]:hover {
+  background-color: #eaeef2 !important;
+}
+
+.light .hover\:bg-\[\#30363d\]:hover {
+  background-color: #d0d7de !important;
+}
+
+.light .hover\:text-white:hover {
+  color: #0969da !important;
+}
+
+/* Semantic Colors */
+.light .text-\[\#58a6ff\],
+.light [class*="text-primary-400"],
+.light [class*="text-primary-500"] {
+  color: #0969da !important;
+}
+
+.light .text-\[\#38bdf8\],
+.light [class*="text-accent-cyan"] {
+  color: #0969da !important;
+}
+
+.light .text-\[\#3fb950\],
+.light [class*="text-emerald-400"] {
+  color: #1a7f37 !important;
+}
+
+.light .text-\[\#d29922\],
+.light [class*="text-amber-400"] {
+  color: #9a6700 !important;
+}
+
+.light .text-\[\#f85149\],
+.light [class*="text-rose-400"] {
+  color: #cf222e !important;
+}
+
+.light .text-\[\#bc8cff\] {
+  color: #8250df !important;
+}
+
+/* Diagrams, Canvas & Cards */
+.light .table-card {
+  background-color: #ffffff !important;
+  border-color: #d0d7de !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08) !important;
+}
+
+.light .table-card [class*="bg-[#0d1117]"],
+.light .table-card .bg-\[\#0d1117\] {
+  background-color: #f6f8fa !important;
+}
+
+.light svg rect[fill="#0d1117"] {
+  fill: #f6f8fa !important;
+}
+
+.light svg circle[fill="#30363d"] {
+  fill: #d0d7de !important;
+}
+
+.light svg pattern rect {
+  fill: #f6f8fa !important;
+}
+
+.light svg pattern circle {
+  fill: #d0d7de !important;
+}

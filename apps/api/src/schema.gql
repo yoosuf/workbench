@@ -1,0 +1,589 @@
+# ------------------------------------------------------
+# THIS FILE WAS AUTOMATICALLY GENERATED (DO NOT MODIFY)
+# ------------------------------------------------------
+
+input AddColumnInput {
+  columnName: String!
+  connectionId: String!
+  defaultValue: String
+  diagramId: String
+  isPrimaryKey: Boolean = false
+  nativeType: String!
+  nullable: Boolean = true
+  schema: String! = "public"
+  tableName: String!
+}
+
+input AddForeignKeyInput {
+  connectionId: String!
+  constraintName: String
+  diagramId: String
+  onDelete: String = "CASCADE"
+  referencedColumn: String!
+  referencedTable: String!
+  schema: String! = "public"
+  sourceColumn: String!
+  sourceTable: String!
+}
+
+input AddTeamMemberInput {
+  teamId: ID!
+  userId: ID!
+}
+
+type AuthResponse {
+  accessToken: String!
+  user: User!
+}
+
+type ColumnInfo {
+  dataKind: DataKind!
+  defaultValue: String
+  isAutoIncrement: Boolean!
+  isForeignKey: Boolean!
+  isPrimaryKey: Boolean!
+  name: String!
+  nativeType: String!
+  nullable: Boolean!
+  ordinalPosition: Int!
+}
+
+type Connection {
+  accessLevel: ConnectionAccessLevel
+  createdAt: DateTime!
+  database: String!
+  effectiveAccessLevel: ConnectionAccessLevel
+  engine: Engine!
+  host: String!
+  id: ID!
+  name: String!
+  port: Int!
+  ssl: Boolean
+  sslMode: String
+  username: String!
+  workspaceId: ID
+}
+
+"""Access level for a database connection (ADMIN, WRITE, READ)"""
+enum ConnectionAccessLevel {
+  ADMIN
+  READ
+  WRITE
+}
+
+type ConnectionPermission {
+  accessLevel: ConnectionAccessLevel!
+  connectionId: ID!
+  createdAt: DateTime!
+  id: ID!
+  user: WorkspaceMemberUser!
+  userId: ID!
+}
+
+input CreateConnectionInput {
+  accessLevel: ConnectionAccessLevel
+  database: String!
+  engine: Engine!
+  host: String!
+  name: String!
+  password: String!
+  port: Int!
+  ssl: Boolean
+  sslMode: String
+  username: String!
+  workspaceId: ID
+}
+
+input CreateSchemaInput {
+  connectionId: ID!
+  schemaName: String!
+}
+
+input CreateTableInput {
+  autoTimestamps: Boolean = true
+  columns: [TableColumnInput!]
+  connectionId: String!
+  diagramId: String
+  positionX: Float = 100
+  positionY: Float = 100
+  primaryKeyColumn: String = "id"
+  primaryKeyType: String
+  schema: String! = "public"
+  tableName: String!
+}
+
+input CreateTeamInput {
+  description: String
+  name: String!
+  workspaceId: ID!
+}
+
+input CreateWorkspaceInput {
+  name: String!
+}
+
+"""Generic standardized data type category"""
+enum DataKind {
+  BINARY
+  BOOLEAN
+  DATETIME
+  JSON
+  NUMERIC
+  STRING
+  UNKNOWN
+}
+
+type DatabaseUser {
+  host: String
+  isSuperuser: Boolean
+  username: String!
+}
+
+"""
+A date-time string at UTC, such as 2019-12-03T09:54:33Z, compliant with the date-time format.
+"""
+scalar DateTime
+
+type DiagramColumn {
+  dataKind: String!
+  isForeignKey: Boolean!
+  isPrimaryKey: Boolean!
+  name: String!
+  nativeType: String!
+}
+
+type DiagramEdge {
+  id: String!
+  relationName: String!
+  source: String!
+  sourceColumn: String!
+  sourceHandle: String
+  target: String!
+  targetColumn: String!
+  targetHandle: String
+}
+
+type DiagramNode {
+  columns: [DiagramColumn!]!
+  id: String!
+  positionX: Float!
+  positionY: Float!
+  schema: String!
+  tableName: String!
+}
+
+type DiagramSummary {
+  connectionId: ID!
+  createdAt: DateTime!
+  id: ID!
+  name: String!
+  updatedAt: DateTime!
+}
+
+type DiagramView {
+  connectionId: ID!
+  createdAt: DateTime!
+  edges: [DiagramEdge!]!
+  id: ID!
+  name: String!
+  nodes: [DiagramNode!]!
+  schema: String!
+  updatedAt: DateTime!
+}
+
+input DropSchemaInput {
+  cascade: Boolean = false
+  connectionId: ID!
+  schemaName: String!
+}
+
+input DropTableInput {
+  connectionId: String!
+  diagramId: String
+  schema: String! = "public"
+  tableName: String!
+}
+
+"""Database Engine Type (MYSQL or POSTGRES)"""
+enum Engine {
+  MYSQL
+  POSTGRES
+}
+
+input ExecuteQueryInput {
+  connectionId: ID!
+  overrideLimits: Boolean = false
+  sql: String!
+}
+
+type FeatureFlagGql {
+  category: String!
+  description: String!
+  enabled: Boolean!
+  key: String!
+  name: String!
+}
+
+type ForeignKeyInfo {
+  columns: [String!]!
+  name: String!
+  onDelete: String!
+  onUpdate: String
+  referencedColumns: [String!]!
+  referencedTable: String!
+}
+
+input GenerateDiagramInput {
+  connectionId: ID!
+  name: String
+  schema: String!
+}
+
+input GrantSchemaPermissionInput {
+  connectionId: ID!
+  grantAllTables: Boolean = true
+  privilege: String!
+  schemaName: String!
+  username: String!
+}
+
+type InAppNotificationModel {
+  createdAt: DateTime!
+  id: ID!
+  isRead: Boolean!
+  message: String!
+  title: String!
+  type: String!
+  userId: ID!
+}
+
+type IndexInfo {
+  columns: [String!]!
+  isUnique: Boolean!
+  name: String!
+  type: String!
+}
+
+input InviteWorkspaceMemberInput {
+  email: String!
+  role: WorkspaceRole!
+  workspaceId: ID!
+}
+
+"""
+The `JSON` scalar type represents JSON values as specified by [ECMA-404](http://www.ecma-international.org/publications/files/ECMA-ST/ECMA-404.pdf).
+"""
+scalar JSON
+
+input LoginInput {
+  email: String!
+  password: String!
+}
+
+type Mutation {
+  addColumn(input: AddColumnInput!): DiagramView!
+  addForeignKey(input: AddForeignKeyInput!): DiagramView!
+  addTeamMember(input: AddTeamMemberInput!): TeamMember!
+  createConnection(input: CreateConnectionInput!): Connection!
+  createSchema(input: CreateSchemaInput!): SchemaInfo!
+  createTable(input: CreateTableInput!): DiagramView!
+  createTeam(input: CreateTeamInput!): Team!
+  createWorkspace(input: CreateWorkspaceInput!): Workspace!
+  deleteConnection(id: ID!): Boolean!
+  deleteDiagram(id: ID!): Boolean!
+  deleteSavedQuery(id: ID!): Boolean!
+  deleteTeam(teamId: ID!, workspaceId: ID!): Boolean!
+  deleteWorkspace(workspaceId: ID!): Boolean!
+  dropSchema(input: DropSchemaInput!): Boolean!
+  dropTable(input: DropTableInput!): DiagramView!
+  executeQuery(input: ExecuteQueryInput!): QueryResultGql!
+  generateDiagram(input: GenerateDiagramInput!): DiagramView!
+  grantSchemaPermission(input: GrantSchemaPermissionInput!): Boolean!
+  inviteWorkspaceMember(input: InviteWorkspaceMemberInput!): WorkspaceMember!
+  login(input: LoginInput!): AuthResponse!
+  logout: Boolean!
+  markAllNotificationsRead: Boolean!
+  markNotificationRead(id: ID!): Boolean!
+  refreshToken: AuthResponse!
+  removeTeamMember(input: RemoveTeamMemberInput!): Boolean!
+  removeWorkspaceMember(memberId: ID!, workspaceId: ID!): Boolean!
+  revokeSchemaPermission(input: RevokeSchemaPermissionInput!): Boolean!
+  saveDiagramLayout(input: SaveDiagramLayoutInput!): Boolean!
+  saveQuery(input: SaveQueryInput!): SavedQueryItem!
+  setConnectionDefaultAccessLevel(input: SetConnectionDefaultAccessLevelInput!): Boolean!
+  setConnectionPermission(input: SetConnectionPermissionInput!): ConnectionPermission!
+
+  """Dynamically toggle feature flag state for testing/development"""
+  setFeatureFlagOverride(enabled: Boolean!, key: String!): Boolean!
+  setTeamConnectionPermission(input: SetTeamConnectionPermissionInput!): TeamConnectionPermission!
+  signup(input: SignupInput!): AuthResponse!
+  testConnection(input: TestConnectionInput!): TestConnectionResult!
+  testSavedConnection(id: ID!): TestConnectionResult!
+  updateTeam(input: UpdateTeamInput!): Team!
+  updateWorkspace(input: UpdateWorkspaceInput!): Workspace!
+  updateWorkspaceMemberRole(input: UpdateWorkspaceMemberRoleInput!): WorkspaceMember!
+}
+
+input NodePositionInput {
+  nodeId: String!
+  x: Float!
+  y: Float!
+}
+
+type Query {
+  connection(id: ID!): Connection!
+  connectionPermissions(connectionId: ID!): [ConnectionPermission!]!
+  connectionSchemas(connectionId: ID!): [SchemaInfo!]!
+  databaseUsers(connectionId: ID!): [DatabaseUser!]!
+  diagram(id: ID!): DiagramView!
+
+  """Get all platform feature flags with evaluation states"""
+  featureFlags: [FeatureFlagGql!]!
+  getWorkspace(id: ID!): Workspace!
+  health: String!
+
+  """Check if a specific feature flag is currently active"""
+  isFeatureEnabled(key: String!): Boolean!
+  listConnections(workspaceId: ID): [Connection!]!
+  listDiagrams(connectionId: ID!): [DiagramSummary!]!
+  listNotifications: [InAppNotificationModel!]!
+  listSavedQueries(connectionId: ID!): [SavedQueryItem!]!
+  listTeams(workspaceId: ID!): [Team!]!
+  listWorkspaces: [Workspace!]!
+  me: User!
+  queryHistory(connectionId: ID!, limit: Int = 50): [QueryHistoryItem!]!
+  schemaPermissions(connectionId: ID!, schema: String!): [SchemaPermission!]!
+  schemaTables(connectionId: ID!, schema: String!): [TableInfo!]!
+  tableData(input: TableDataInput!): TableDataResultGql!
+  tableDetails(connectionId: ID!, schema: String!, table: String!): TableInfo!
+  teamConnectionPermissions(connectionId: ID!): [TeamConnectionPermission!]!
+  unreadNotificationCount: Int!
+  workspaceMembers(workspaceId: ID!): [WorkspaceMember!]!
+}
+
+type QueryHistoryItem {
+  connectionId: ID!
+  durationMs: Int!
+  errorMessage: String
+  executedAt: DateTime!
+  id: ID!
+  rowCount: Int
+  sql: String!
+  success: Boolean!
+}
+
+type QueryResultGql {
+  columns: [String!]!
+  executionTimeMs: Int!
+  rowCount: Int!
+  rows: [JSON!]!
+  truncated: Boolean!
+}
+
+input RemoveTeamMemberInput {
+  teamId: ID!
+  userId: ID!
+}
+
+input RevokeSchemaPermissionInput {
+  connectionId: ID!
+  privilege: String!
+  schemaName: String!
+  username: String!
+}
+
+input SaveDiagramLayoutInput {
+  diagramId: ID!
+  positions: [NodePositionInput!]!
+}
+
+input SaveQueryInput {
+  connectionId: ID!
+  name: String!
+  sql: String!
+}
+
+type SavedQueryItem {
+  connectionId: ID!
+  createdAt: DateTime!
+  id: ID!
+  name: String!
+  sql: String!
+}
+
+type SchemaInfo {
+  connectionId: ID
+  name: String!
+  tables: [TableInfo!]
+}
+
+type SchemaPermission {
+  grantee: String!
+  isGrantable: Boolean
+  privilege: String!
+}
+
+input SetConnectionDefaultAccessLevelInput {
+  accessLevel: ConnectionAccessLevel!
+  connectionId: ID!
+}
+
+input SetConnectionPermissionInput {
+  accessLevel: ConnectionAccessLevel!
+  connectionId: ID!
+  userId: ID!
+}
+
+input SetTeamConnectionPermissionInput {
+  accessLevel: ConnectionAccessLevel!
+  connectionId: ID!
+  teamId: ID!
+}
+
+input SignupInput {
+  email: String!
+  password: String!
+}
+
+input TableColumnInput {
+  defaultValue: String
+  isUnique: Boolean = false
+  name: String!
+  nativeType: String!
+  nullable: Boolean = true
+}
+
+input TableDataInput {
+  connectionId: ID!
+  limit: Int = 100
+  offset: Int = 0
+  schema: String!
+  sortColumn: String
+  sortOrder: String
+  table: String!
+}
+
+type TableDataResultGql {
+  columns: [String!]!
+  executionTimeMs: Int!
+  limit: Int!
+  offset: Int!
+  rowCount: Int!
+  rows: [JSON!]!
+  sortColumn: String
+  sortOrder: String
+  totalCount: Int!
+  truncated: Boolean!
+}
+
+type TableInfo {
+  columns(connectionId: ID): [ColumnInfo!]
+  foreignKeys(connectionId: ID): [ForeignKeyInfo!]
+  indexes(connectionId: ID): [IndexInfo!]
+  kind: String!
+  name: String!
+  primaryKey(connectionId: ID): [String!]
+  schema: String!
+}
+
+type Team {
+  createdAt: DateTime!
+  description: String
+  id: ID!
+  memberCount: Int!
+  members: [TeamMember!]
+  name: String!
+  slug: String!
+  workspaceId: ID!
+}
+
+type TeamConnectionPermission {
+  accessLevel: ConnectionAccessLevel!
+  connectionId: ID!
+  createdAt: DateTime!
+  id: ID!
+  team: Team!
+  teamId: ID!
+}
+
+type TeamMember {
+  createdAt: DateTime!
+  id: ID!
+  teamId: ID!
+  user: WorkspaceMemberUser!
+  userId: ID!
+}
+
+input TestConnectionInput {
+  database: String!
+  engine: Engine!
+  host: String!
+  password: String!
+  port: Int!
+  ssl: Boolean
+  sslMode: String
+  username: String!
+}
+
+type TestConnectionResult {
+  latencyMs: Int!
+  message: String
+  success: Boolean!
+}
+
+input UpdateTeamInput {
+  description: String
+  name: String!
+  teamId: ID!
+  workspaceId: ID!
+}
+
+input UpdateWorkspaceInput {
+  name: String!
+  workspaceId: ID!
+}
+
+input UpdateWorkspaceMemberRoleInput {
+  memberId: ID!
+  role: WorkspaceRole!
+  workspaceId: ID!
+}
+
+type User {
+  createdAt: DateTime!
+  email: String!
+  id: ID!
+}
+
+type Workspace {
+  createdAt: DateTime!
+  currentUserRole: WorkspaceRole
+  id: ID!
+  members: [WorkspaceMember!]
+  name: String!
+  slug: String!
+  teams: [Team!]
+  updatedAt: DateTime!
+}
+
+type WorkspaceMember {
+  createdAt: DateTime!
+  id: ID!
+  role: WorkspaceRole!
+  user: WorkspaceMemberUser!
+  userId: ID!
+  workspaceId: ID!
+}
+
+type WorkspaceMemberUser {
+  email: String!
+  id: ID!
+}
+
+"""Role of a member within a workspace (OWNER, ADMIN, MEMBER, READONLY)"""
+enum WorkspaceRole {
+  ADMIN
+  MEMBER
+  OWNER
+  READONLY
+}
