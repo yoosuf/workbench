@@ -626,7 +626,7 @@ export const DiagramCanvasPage: React.FC = () => {
         diagramId={selectedDiagramId}
         onTableCreated={(view) => {
           loadDiagramData(view);
-          refetchDiagrams();
+          void refetchDiagrams();
         }}
       />
 

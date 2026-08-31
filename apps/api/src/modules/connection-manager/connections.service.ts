@@ -117,7 +117,7 @@ export class ConnectionsService {
   }
 
   async listConnections(userId: string, workspaceId?: string): Promise<Connection[]> {
-    let whereClause: any = {};
+    let whereClause: any;
 
     if (workspaceId) {
       // Verify user has access to workspace
@@ -226,7 +226,7 @@ export class ConnectionsService {
       throw new NotFoundException(`Connection "${id}" not found`);
     }
 
-    let password = '';
+    let password: string;
     let ssl: any = undefined;
 
     try {

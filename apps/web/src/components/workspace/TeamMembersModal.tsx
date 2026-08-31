@@ -211,7 +211,7 @@ export const TeamMembersModal: React.FC<TeamMembersModalProps> = ({
         },
       });
       setInviteEmail('');
-      refetchMembers();
+      void refetchMembers();
     } catch (err) {
       console.error('Failed to invite member:', err);
     }
@@ -228,7 +228,7 @@ export const TeamMembersModal: React.FC<TeamMembersModalProps> = ({
           },
         },
       });
-      refetchMembers();
+      void refetchMembers();
     } catch (err) {
       console.error('Failed to update role:', err);
     }
@@ -240,7 +240,7 @@ export const TeamMembersModal: React.FC<TeamMembersModalProps> = ({
       await removeMember({
         variables: { workspaceId, memberId },
       });
-      refetchMembers();
+      void refetchMembers();
     } catch (err) {
       console.error('Failed to remove member:', err);
     }
@@ -264,7 +264,7 @@ export const TeamMembersModal: React.FC<TeamMembersModalProps> = ({
       setNewTeamName('');
       setNewTeamDescription('');
       setShowCreateTeam(false);
-      refetchTeams();
+      void refetchTeams();
     } catch (err) {
       console.error('Failed to create team:', err);
     }
@@ -292,7 +292,7 @@ export const TeamMembersModal: React.FC<TeamMembersModalProps> = ({
         },
       });
       setEditingTeamId(null);
-      refetchTeams();
+      void refetchTeams();
     } catch (err) {
       console.error('Failed to update team:', err);
     }
@@ -304,7 +304,7 @@ export const TeamMembersModal: React.FC<TeamMembersModalProps> = ({
       await addTeamMember({
         variables: { input: { teamId, userId } },
       });
-      refetchTeams();
+      void refetchTeams();
     } catch (err) {
       console.error('Failed to add member to team:', err);
     }
@@ -315,7 +315,7 @@ export const TeamMembersModal: React.FC<TeamMembersModalProps> = ({
       await removeTeamMember({
         variables: { input: { teamId, userId } },
       });
-      refetchTeams();
+      void refetchTeams();
     } catch (err) {
       console.error('Failed to remove member from team:', err);
     }
@@ -327,7 +327,7 @@ export const TeamMembersModal: React.FC<TeamMembersModalProps> = ({
       await deleteTeam({
         variables: { workspaceId, teamId },
       });
-      refetchTeams();
+      void refetchTeams();
     } catch (err) {
       console.error('Failed to delete team:', err);
     }
@@ -344,7 +344,7 @@ export const TeamMembersModal: React.FC<TeamMembersModalProps> = ({
           },
         },
       });
-      refetchPerms();
+      void refetchPerms();
     } catch (err) {
       console.error('Failed to set user permission:', err);
     }
@@ -361,7 +361,7 @@ export const TeamMembersModal: React.FC<TeamMembersModalProps> = ({
           },
         },
       });
-      refetchTeamPerms();
+      void refetchTeamPerms();
     } catch (err) {
       console.error('Failed to set team permission:', err);
     }
@@ -749,7 +749,7 @@ export const TeamMembersModal: React.FC<TeamMembersModalProps> = ({
                                   defaultValue=""
                                   onChange={(e) => {
                                     if (e.target.value) {
-                                      handleAddMemberToTeam(team.id, e.target.value);
+                                      void handleAddMemberToTeam(team.id, e.target.value);
                                       e.target.value = '';
                                     }
                                   }}

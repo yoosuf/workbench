@@ -1,16 +1,17 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation } from '@apollo/client';
 import { useNavigate } from 'react-router-dom';
-import { 
-  Network, 
-  Plus, 
-  Server, 
-  Layers, 
-  Play, 
-  Trash2, 
-  CheckCircle2, 
-  AlertCircle, 
-  Loader2, 
+import {
+  Network,
+  Plus,
+  Server,
+  Layers,
+  HardDrive,
+  Play,
+  Trash2,
+  CheckCircle2,
+  AlertCircle,
+  Loader2,
   ExternalLink,
   ShieldCheck,
   RefreshCw,
@@ -135,6 +136,26 @@ export const ConnectionsPage: React.FC = () => {
     }
   };
 
+  const handleQuickAddMssql = async () => {
+    try {
+      await createConnection({
+        variables: {
+          input: {
+            name: 'Local SQL Server (Docker Port 1434)',
+            engine: Engine.MSSQL,
+            host: '127.0.0.1',
+            port: 1434,
+            database: 'sample_ecommerce',
+            username: 'sa',
+            password: 'MssqlPassword1!',
+          },
+        },
+      });
+    } catch (err: any) {
+      alert(`Error creating connection: ${err.message}`);
+    }
+  };
+
   const connections = data?.listConnections || [];
 
   return (
@@ -149,7 +170,7 @@ export const ConnectionsPage: React.FC = () => {
             <h1 className="text-xl font-bold text-white tracking-tight">Database Connections</h1>
           </div>
           <p className="text-xs text-[#8b949e]">
-            Manage target endpoints for PostgreSQL and MySQL instances. Credentials encrypted at rest with AES-256-GCM.
+            Manage target endpoints for PostgreSQL, MySQL, and SQL Server instances. Credentials encrypted at rest with AES-256-GCM.
           </p>
         </div>
 
@@ -183,7 +204,7 @@ export const ConnectionsPage: React.FC = () => {
           <div>
             <h2 className="text-sm font-bold text-white">No Database Connections Configured</h2>
             <p className="text-xs text-[#8b949e] max-w-md mx-auto mt-1">
-              Add your PostgreSQL or MySQL database connection, or quickly initialize connections to the local Docker test containers.
+              Add your PostgreSQL, MySQL, or SQL Server database connection, or quickly initialize connections to the local Docker test containers.
             </p>
           </div>
           <div className="flex flex-wrap justify-center gap-3 pt-2">
@@ -205,6 +226,15 @@ export const ConnectionsPage: React.FC = () => {
               <Layers className="w-3.5 h-3.5" />
               <span>Connect Sample MySQL (:3307)</span>
             </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleQuickAddMssql}
+              className="gap-2 text-[#c084fc] border-[#a855f7]/30 hover:bg-[#a855f7]/10"
+            >
+              <HardDrive className="w-3.5 h-3.5" />
+              <span>Connect Sample SQL Server (:1434)</span>
+            </Button>
           </div>
         </div>
       )}
@@ -219,6 +249,7 @@ export const ConnectionsPage: React.FC = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {connections.map((conn) => {
             const isPg = conn.engine === Engine.POSTGRES;
+            const isMssql = conn.engine === Engine.MSSQL;
             const testStatus = testStatuses[conn.id];
             const isTesting = testingId === conn.id;
 
@@ -234,7 +265,9 @@ export const ConnectionsPage: React.FC = () => {
                       className={`w-10 h-10 rounded-xl border flex items-center justify-center flex-shrink-0 ${
                         isPg
                           ? 'bg-[#336791]/15 border-[#336791]/40 text-[#58a6ff]'
-                          : 'bg-[#00758f]/15 border-[#00758f]/40 text-[#38bdf8]'
+                          : isMssql
+                            ? 'bg-[#a855f7]/15 border-[#a855f7]/40 text-[#c084fc]'
+                            : 'bg-[#00758f]/15 border-[#00758f]/40 text-[#38bdf8]'
                       }`}
                     >
                       <Database className="w-5 h-5" />

@@ -23,6 +23,7 @@ enum ConnectionAccessLevel {
 enum Engine {
   MYSQL
   POSTGRES
+  MSSQL
 }
 
 model User {

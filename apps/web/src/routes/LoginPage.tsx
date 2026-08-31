@@ -36,7 +36,7 @@ export const LoginPage: React.FC = () => {
         const { accessToken, user } = res.data.login;
         setAuth(accessToken, user);
         const from = (location.state as { from?: { pathname?: string } })?.from?.pathname || '/';
-        navigate(from, { replace: true });
+        void navigate(from, { replace: true });
       }
     } catch (err: any) {
       setErrorMsg(err.message || 'Failed to authenticate. Please check your credentials.');

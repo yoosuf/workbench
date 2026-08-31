@@ -46,7 +46,7 @@ export const CreateSchemaDrawer: React.FC<CreateSchemaDrawerProps> = ({
       return;
     }
     setError(null);
-    createSchema({
+    void createSchema({
       variables: {
         input: {
           connectionId,

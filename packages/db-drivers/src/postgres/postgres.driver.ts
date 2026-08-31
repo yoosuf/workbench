@@ -1,20 +1,89 @@
-import { Client } from 'pg';
+import { Pool, PoolClient } from 'pg';
 import {
   AddColumnOptions,
   AddForeignKeyOptions,
   ColumnMeta,
   ConnectionConfig,
   CreateTableOptions,
+  DatabaseUserMeta,
   DbDriver,
   ForeignKeyMeta,
+  GrantPermissionOptions,
   IndexMeta,
   QueryResult,
+  RevokePermissionOptions,
+  SchemaPermissionMeta,
   TableDataOptions,
   TableDataResult,
   TableMeta,
   DataKind,
 } from '../types';
 import { DriverError } from '../errors';
+import { PoolCache } from '../pool-cache';
+
+const FATAL_CONNECTION_CODES = new Set([
+  'ECONNREFUSED',
+  'ECONNRESET',
+  'ETIMEDOUT',
+  'ENOTFOUND',
+  'EHOSTUNREACH',
+  'EPIPE',
+  '28P01', // invalid_password
+  '28000', // invalid_authorization_specification
+  '57P01', // admin_shutdown
+  '08006', // connection_failure
+  '08003', // connection_does_not_exist
+  '08001', // sqlclient_unable_to_establish_sqlconnection
+  '08004', // sqlserver_rejected_establishment_of_sqlconnection
+]);
+
+function resolveSsl(config: ConnectionConfig): any {
+  if (!config.ssl) return false;
+  if (typeof config.ssl === 'boolean') {
+    return config.ssl ? { rejectUnauthorized: false } : false;
+  }
+  if (config.ssl.sslMode === 'disable') {
+    return false;
+  }
+  return {
+    rejectUnauthorized: config.ssl.rejectUnauthorized ?? false,
+    ca: config.ssl.ca,
+  };
+}
+
+// Long-lived, shared across all PostgresDriver instances (the factory creates a fresh
+// instance per call) so repeated operations against the same saved connection reuse one
+// warm pool instead of paying a fresh TCP+auth handshake every time.
+const pools = new PoolCache<Pool>({
+  create: async (config) => {
+    const pool = new Pool({
+      host: config.host,
+      port: config.port,
+      database: config.database,
+      user: config.username,
+      password: config.password,
+      ssl: resolveSsl(config),
+      statement_timeout: 30000,
+      query_timeout: 30000,
+      connectionTimeoutMillis: 10000,
+      max: 5,
+      idleTimeoutMillis: 30000,
+    });
+    // A pooled client can emit a background 'error' if it goes bad while idle (e.g. the
+    // backend restarts). Without this listener that would crash the whole process.
+    pool.on('error', () => {});
+    try {
+      await pool.query('SELECT 1');
+    } catch (err) {
+      await pool.end().catch(() => {});
+      throw err;
+    }
+    return pool;
+  },
+  destroy: async (pool) => {
+    await pool.end();
+  },
+});
 
 export class PostgresDriver implements DbDriver {
   private validateIdentifier(name: string, label: string): string {
@@ -31,37 +100,9 @@ export class PostgresDriver implements DbDriver {
     return sanitized;
   }
 
-  private resolveSsl(config: ConnectionConfig): any {
-    if (!config.ssl) return false;
-    if (typeof config.ssl === 'boolean') {
-      return config.ssl ? { rejectUnauthorized: false } : false;
-    }
-    if (config.ssl.sslMode === 'disable') {
-      return false;
-    }
-    return {
-      rejectUnauthorized: config.ssl.rejectUnauthorized ?? false,
-      ca: config.ssl.ca,
-    };
-  }
-
-  private async getClient(config: ConnectionConfig): Promise<Client> {
-    const ssl = this.resolveSsl(config);
-    const client = new Client({
-      host: config.host,
-      port: config.port,
-      database: config.database,
-      user: config.username,
-      password: config.password,
-      ssl,
-      statement_timeout: 30000,
-      query_timeout: 30000,
-      connectionTimeoutMillis: 10000,
-    });
-
+  private async getPool(config: ConnectionConfig): Promise<Pool> {
     try {
-      await client.connect();
-      return client;
+      return await pools.get(config);
     } catch (err: any) {
       throw new DriverError(
         err.code || 'PG_CONNECTION_ERROR',
@@ -71,22 +112,31 @@ export class PostgresDriver implements DbDriver {
     }
   }
 
-  private async safeEnd(client: Client): Promise<void> {
-    try {
-      await client.end();
-    } catch {
-      // Ignore cleanup error
+  private async evictIfFatal(config: ConnectionConfig, err: any): Promise<void> {
+    if (FATAL_CONNECTION_CODES.has(err?.code)) {
+      await pools.evict(config);
     }
   }
 
   async testConnection(config: ConnectionConfig): Promise<boolean> {
-    const client = await this.getClient(config);
+    // Ad-hoc check against possibly-unsaved credentials (e.g. the "Test Connection" button) —
+    // deliberately not cached, so we don't pollute the pool cache with throwaway attempts.
+    const pool = new Pool({
+      host: config.host,
+      port: config.port,
+      database: config.database,
+      user: config.username,
+      password: config.password,
+      ssl: resolveSsl(config),
+      connectionTimeoutMillis: 10000,
+      max: 1,
+    });
     try {
-      await client.query('SELECT 1');
-      await this.safeEnd(client);
+      await pool.query('SELECT 1');
+      await pool.end();
       return true;
     } catch (err: any) {
-      await this.safeEnd(client);
+      await pool.end().catch(() => {});
       throw new DriverError(
         err.code || 'PG_TEST_ERROR',
         `PostgreSQL test connection failed: ${err.message}`,
@@ -96,20 +146,19 @@ export class PostgresDriver implements DbDriver {
   }
 
   async listSchemas(config: ConnectionConfig): Promise<string[]> {
-    const client = await this.getClient(config);
+    const pool = await this.getPool(config);
     try {
-      const res = await client.query(`
-        SELECT schema_name 
-        FROM information_schema.schemata 
+      const res = await pool.query(`
+        SELECT schema_name
+        FROM information_schema.schemata
         WHERE schema_name NOT IN ('information_schema', 'pg_catalog', 'pg_toast')
           AND schema_name NOT LIKE 'pg_temp_%'
           AND schema_name NOT LIKE 'pg_toast_temp_%'
         ORDER BY schema_name ASC;
       `);
-      await this.safeEnd(client);
       return res.rows.map((r) => r.schema_name);
     } catch (err: any) {
-      await this.safeEnd(client);
+      await this.evictIfFatal(config, err);
       throw new DriverError(
         err.code || 'PG_LIST_SCHEMAS_ERROR',
         `Failed to list schemas: ${err.message}`,
@@ -120,13 +169,12 @@ export class PostgresDriver implements DbDriver {
 
   async createSchema(config: ConnectionConfig, schemaName: string): Promise<boolean> {
     const validName = this.validateIdentifier(schemaName, 'schema name');
-    const client = await this.getClient(config);
+    const pool = await this.getPool(config);
     try {
-      await client.query(`CREATE SCHEMA IF NOT EXISTS "${validName}"`);
-      await this.safeEnd(client);
+      await pool.query(`CREATE SCHEMA IF NOT EXISTS "${validName}"`);
       return true;
     } catch (err: any) {
-      await this.safeEnd(client);
+      await this.evictIfFatal(config, err);
       throw new DriverError(
         err.code || 'PG_CREATE_SCHEMA_ERROR',
         `Failed to create schema "${schemaName}": ${err.message}`,
@@ -147,13 +195,12 @@ export class PostgresDriver implements DbDriver {
         `Cannot drop system or default schema "${validName}"`,
       );
     }
-    const client = await this.getClient(config);
+    const pool = await this.getPool(config);
     try {
-      await client.query(`DROP SCHEMA IF EXISTS "${validName}" ${cascade ? 'CASCADE' : 'RESTRICT'}`);
-      await this.safeEnd(client);
+      await pool.query(`DROP SCHEMA IF EXISTS "${validName}" ${cascade ? 'CASCADE' : 'RESTRICT'}`);
       return true;
     } catch (err: any) {
-      await this.safeEnd(client);
+      await this.evictIfFatal(config, err);
       throw new DriverError(
         err.code || 'PG_DROP_SCHEMA_ERROR',
         `Failed to drop schema "${schemaName}": ${err.message}`,
@@ -162,21 +209,20 @@ export class PostgresDriver implements DbDriver {
     }
   }
 
-  async listDatabaseUsers(config: ConnectionConfig): Promise<any[]> {
-    const client = await this.getClient(config);
+  async listDatabaseUsers(config: ConnectionConfig): Promise<DatabaseUserMeta[]> {
+    const pool = await this.getPool(config);
     try {
-      const res = await client.query(`
-        SELECT usename AS username, usesuper AS is_superuser 
-        FROM pg_user 
+      const res = await pool.query(`
+        SELECT usename AS username, usesuper AS is_superuser
+        FROM pg_user
         ORDER BY usename ASC;
       `);
-      await this.safeEnd(client);
       return res.rows.map((r) => ({
         username: r.username,
         isSuperuser: !!r.is_superuser,
       }));
     } catch (err: any) {
-      await this.safeEnd(client);
+      await this.evictIfFatal(config, err);
       throw new DriverError(
         err.code || 'PG_LIST_USERS_ERROR',
         `Failed to list database users: ${err.message}`,
@@ -188,34 +234,32 @@ export class PostgresDriver implements DbDriver {
   async getSchemaPermissions(
     config: ConnectionConfig,
     schemaName: string,
-  ): Promise<any[]> {
+  ): Promise<SchemaPermissionMeta[]> {
     const validName = this.validateIdentifier(schemaName, 'schema');
-    const client = await this.getClient(config);
+    const pool = await this.getPool(config);
     try {
-      const res = await client.query(
+      const res = await pool.query(
         `
-        SELECT grantee, privilege_type, is_grantable 
-        FROM information_schema.schema_privileges 
+        SELECT grantee, privilege_type, is_grantable
+        FROM information_schema.schema_privileges
         WHERE schema_name = $1
         ORDER BY grantee, privilege_type ASC;
       `,
         [validName],
       );
-      await this.safeEnd(client);
       return res.rows.map((r) => ({
         grantee: r.grantee,
         privilege: r.privilege_type,
         isGrantable: r.is_grantable === 'YES',
       }));
     } catch {
-      await this.safeEnd(client);
       return [];
     }
   }
 
   async grantSchemaPermission(
     config: ConnectionConfig,
-    options: any,
+    options: GrantPermissionOptions,
   ): Promise<boolean> {
     const schema = this.validateIdentifier(options.schema, 'schema');
     const username = this.validateIdentifier(options.username, 'username');
@@ -224,27 +268,26 @@ export class PostgresDriver implements DbDriver {
     if (!allowed.includes(privilege)) {
       throw new DriverError('INVALID_PRIVILEGE', `Unsupported privilege: ${options.privilege}`);
     }
-    const client = await this.getClient(config);
+    const pool = await this.getPool(config);
     try {
       if (['USAGE', 'CREATE', 'ALL PRIVILEGES'].includes(privilege)) {
-        await client.query(`GRANT ${privilege} ON SCHEMA "${schema}" TO "${username}"`);
+        await pool.query(`GRANT ${privilege} ON SCHEMA "${schema}" TO "${username}"`);
       }
       if (
         options.grantAllTables ||
         ['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'ALL PRIVILEGES'].includes(privilege)
       ) {
         const tablePriv = ['USAGE', 'CREATE'].includes(privilege) ? 'SELECT' : privilege;
-        await client.query(
+        await pool.query(
           `GRANT ${tablePriv} ON ALL TABLES IN SCHEMA "${schema}" TO "${username}"`,
         );
-        await client.query(
+        await pool.query(
           `ALTER DEFAULT PRIVILEGES IN SCHEMA "${schema}" GRANT ${tablePriv} ON TABLES TO "${username}"`,
         );
       }
-      await this.safeEnd(client);
       return true;
     } catch (err: any) {
-      await this.safeEnd(client);
+      await this.evictIfFatal(config, err);
       throw new DriverError(
         err.code || 'PG_GRANT_ERROR',
         `Failed to grant permission: ${err.message}`,
@@ -255,21 +298,20 @@ export class PostgresDriver implements DbDriver {
 
   async revokeSchemaPermission(
     config: ConnectionConfig,
-    options: any,
+    options: RevokePermissionOptions,
   ): Promise<boolean> {
     const schema = this.validateIdentifier(options.schema, 'schema');
     const username = this.validateIdentifier(options.username, 'username');
     const privilege = options.privilege.toUpperCase();
-    const client = await this.getClient(config);
+    const pool = await this.getPool(config);
     try {
-      await client.query(`REVOKE ${privilege} ON SCHEMA "${schema}" FROM "${username}"`);
-      await client.query(
+      await pool.query(`REVOKE ${privilege} ON SCHEMA "${schema}" FROM "${username}"`);
+      await pool.query(
         `REVOKE ${privilege} ON ALL TABLES IN SCHEMA "${schema}" FROM "${username}"`,
       );
-      await this.safeEnd(client);
       return true;
     } catch (err: any) {
-      await this.safeEnd(client);
+      await this.evictIfFatal(config, err);
       throw new DriverError(
         err.code || 'PG_REVOKE_ERROR',
         `Failed to revoke permission: ${err.message}`,
@@ -280,25 +322,24 @@ export class PostgresDriver implements DbDriver {
 
   async listTables(config: ConnectionConfig, schema: string): Promise<TableMeta[]> {
     const targetSchema = this.validateIdentifier(schema || 'public', 'schema');
-    const client = await this.getClient(config);
+    const pool = await this.getPool(config);
     try {
-      const res = await client.query(
+      const res = await pool.query(
         `
-        SELECT table_name, table_type 
-        FROM information_schema.tables 
+        SELECT table_name, table_type
+        FROM information_schema.tables
         WHERE table_schema = $1
         ORDER BY table_name ASC;
       `,
         [targetSchema],
       );
-      await this.safeEnd(client);
       return res.rows.map((r) => ({
         name: r.table_name,
         kind: r.table_type === 'VIEW' ? 'VIEW' : 'TABLE',
         schema: targetSchema,
       }));
     } catch (err: any) {
-      await this.safeEnd(client);
+      await this.evictIfFatal(config, err);
       throw new DriverError(
         err.code || 'PG_LIST_TABLES_ERROR',
         `Failed to list tables for schema "${schema}": ${err.message}`,
@@ -314,11 +355,11 @@ export class PostgresDriver implements DbDriver {
   ): Promise<ColumnMeta[]> {
     const targetSchema = this.validateIdentifier(schema || 'public', 'schema');
     const targetTable = this.validateIdentifier(table, 'table');
-    const client = await this.getClient(config);
+    const pool = await this.getPool(config);
     try {
-      const res = await client.query(
+      const res = await pool.query(
         `
-        SELECT 
+        SELECT
           column_name,
           data_type,
           udt_name,
@@ -327,13 +368,12 @@ export class PostgresDriver implements DbDriver {
           ordinal_position,
           is_identity,
           identity_generation
-        FROM information_schema.columns 
+        FROM information_schema.columns
         WHERE table_schema = $1 AND table_name = $2
         ORDER BY ordinal_position ASC;
       `,
         [targetSchema, targetTable],
       );
-      await this.safeEnd(client);
 
       return res.rows.map((r) => {
         const isAutoInc =
@@ -353,7 +393,7 @@ export class PostgresDriver implements DbDriver {
         };
       });
     } catch (err: any) {
-      await this.safeEnd(client);
+      await this.evictIfFatal(config, err);
       throw new DriverError(
         err.code || 'PG_GET_COLUMNS_ERROR',
         `Failed to get columns for table "${schema}.${table}": ${err.message}`,
@@ -369,9 +409,9 @@ export class PostgresDriver implements DbDriver {
   ): Promise<string[]> {
     const targetSchema = this.validateIdentifier(schema || 'public', 'schema');
     const targetTable = this.validateIdentifier(table, 'table');
-    const client = await this.getClient(config);
+    const pool = await this.getPool(config);
     try {
-      const res = await client.query(
+      const res = await pool.query(
         `
         SELECT kcu.column_name
         FROM information_schema.table_constraints tc
@@ -385,10 +425,9 @@ export class PostgresDriver implements DbDriver {
       `,
         [targetSchema, targetTable],
       );
-      await this.safeEnd(client);
       return res.rows.map((r) => r.column_name);
     } catch (err: any) {
-      await this.safeEnd(client);
+      await this.evictIfFatal(config, err);
       throw new DriverError(
         err.code || 'PG_GET_PK_ERROR',
         `Failed to get primary key for table "${schema}.${table}": ${err.message}`,
@@ -404,9 +443,9 @@ export class PostgresDriver implements DbDriver {
   ): Promise<ForeignKeyMeta[]> {
     const targetSchema = this.validateIdentifier(schema || 'public', 'schema');
     const targetTable = this.validateIdentifier(table, 'table');
-    const client = await this.getClient(config);
+    const pool = await this.getPool(config);
     try {
-      const res = await client.query(
+      const res = await pool.query(
         `
         SELECT
           tc.constraint_name,
@@ -431,7 +470,6 @@ export class PostgresDriver implements DbDriver {
       `,
         [targetSchema, targetTable],
       );
-      await this.safeEnd(client);
 
       const fkMap = new Map<string, ForeignKeyMeta>();
       for (const row of res.rows) {
@@ -457,7 +495,7 @@ export class PostgresDriver implements DbDriver {
 
       return Array.from(fkMap.values());
     } catch (err: any) {
-      await this.safeEnd(client);
+      await this.evictIfFatal(config, err);
       throw new DriverError(
         err.code || 'PG_GET_FOREIGN_KEYS_ERROR',
         `Failed to get foreign keys for table "${schema}.${table}": ${err.message}`,
@@ -473,9 +511,9 @@ export class PostgresDriver implements DbDriver {
   ): Promise<IndexMeta[]> {
     const targetSchema = this.validateIdentifier(schema || 'public', 'schema');
     const targetTable = this.validateIdentifier(table, 'table');
-    const client = await this.getClient(config);
+    const pool = await this.getPool(config);
     try {
-      const res = await client.query(
+      const res = await pool.query(
         `
         SELECT
           i.relname AS index_name,
@@ -493,7 +531,6 @@ export class PostgresDriver implements DbDriver {
       `,
         [targetSchema, targetTable],
       );
-      await this.safeEnd(client);
 
       return res.rows.map((r) => ({
         name: r.index_name,
@@ -502,7 +539,7 @@ export class PostgresDriver implements DbDriver {
         columns: r.column_names ? r.column_names.split(',') : [],
       }));
     } catch (err: any) {
-      await this.safeEnd(client);
+      await this.evictIfFatal(config, err);
       throw new DriverError(
         err.code || 'PG_GET_INDEXES_ERROR',
         `Failed to get indexes for table "${schema}.${table}": ${err.message}`,
@@ -516,8 +553,11 @@ export class PostgresDriver implements DbDriver {
     sql: string,
     options: { timeoutMs: number; maxRows: number },
   ): Promise<QueryResult> {
-    const client = await this.getClient(config);
+    const pool = await this.getPool(config);
     const start = Date.now();
+    // statement_timeout is a per-connection session setting, so it and the query it guards
+    // must run on the same checked-out client rather than two independent pool.query() calls.
+    const client: PoolClient = await pool.connect();
     try {
       if (options.timeoutMs) {
         await client.query(`SET statement_timeout = ${Number(options.timeoutMs)}`);
@@ -542,8 +582,6 @@ export class PostgresDriver implements DbDriver {
         return obj;
       });
 
-      await this.safeEnd(client);
-
       return {
         columns,
         rows: structuredRows,
@@ -552,12 +590,14 @@ export class PostgresDriver implements DbDriver {
         truncated: isTruncated,
       };
     } catch (err: any) {
-      await this.safeEnd(client);
+      await this.evictIfFatal(config, err);
       throw new DriverError(
         err.code || 'PG_QUERY_EXECUTION_ERROR',
         `Query Execution Error: ${err.message}`,
         err,
       );
+    } finally {
+      client.release();
     }
   }
 
@@ -569,7 +609,7 @@ export class PostgresDriver implements DbDriver {
   ): Promise<TableDataResult> {
     const targetSchema = this.validateIdentifier(schema || 'public', 'schema');
     const targetTable = this.validateIdentifier(table, 'table');
-    const client = await this.getClient(config);
+    const pool = await this.getPool(config);
     const safeSchema = `"${targetSchema.replace(/"/g, '""')}"`;
     const safeTable = `"${targetTable.replace(/"/g, '""')}"`;
 
@@ -578,7 +618,7 @@ export class PostgresDriver implements DbDriver {
 
     try {
       // 1. Get total count
-      const countRes = await client.query(
+      const countRes = await pool.query(
         `SELECT COUNT(*)::int AS count FROM ${safeSchema}.${safeTable}`,
       );
       const totalCount = countRes.rows[0]?.count ?? 0;
@@ -592,8 +632,6 @@ export class PostgresDriver implements DbDriver {
         querySql += ` ORDER BY ${safeSort} ${sortDir}`;
       }
       querySql += ` LIMIT ${Number(limit)} OFFSET ${Number(offset)}`;
-
-      await this.safeEnd(client);
 
       const qResult = await this.executeQuery(config, querySql, {
         timeoutMs: 30000,
@@ -609,7 +647,7 @@ export class PostgresDriver implements DbDriver {
         sortOrder: options?.sortOrder ?? null,
       };
     } catch (err: any) {
-      await this.safeEnd(client);
+      await this.evictIfFatal(config, err);
       throw new DriverError(
         err.code || 'PG_GET_TABLE_DATA_ERROR',
         `Failed to browse table data for "${targetSchema}.${table}": ${err.message}`,
@@ -627,7 +665,7 @@ export class PostgresDriver implements DbDriver {
     const targetTable = this.validateIdentifier(options.tableName, 'tableName');
     const pkColumnName = this.validateIdentifier(options.primaryKeyColumn || 'id', 'primaryKeyColumn');
 
-    const client = await this.getClient(config);
+    const pool = await this.getPool(config);
     const safeSchema = `"${targetSchema.replace(/"/g, '""')}"`;
     const safeTable = `"${targetTable.replace(/"/g, '""')}"`;
     const pkCol = `"${pkColumnName.replace(/"/g, '""')}"`;
@@ -662,11 +700,10 @@ export class PostgresDriver implements DbDriver {
 
     try {
       const sql = `CREATE TABLE IF NOT EXISTS ${safeSchema}.${safeTable} (\n  ${colDefs.join(',\n  ')}\n);`;
-      await client.query(sql);
-      await this.safeEnd(client);
+      await pool.query(sql);
       return true;
     } catch (err: any) {
-      await this.safeEnd(client);
+      await this.evictIfFatal(config, err);
       throw new DriverError(
         err.code || 'PG_CREATE_TABLE_ERROR',
         `Failed to create table "${targetSchema}.${options.tableName}": ${err.message}`,
@@ -685,7 +722,7 @@ export class PostgresDriver implements DbDriver {
     const targetTable = this.validateIdentifier(table, 'table');
     const targetCol = this.validateIdentifier(options.columnName, 'columnName');
 
-    const client = await this.getClient(config);
+    const pool = await this.getPool(config);
     const safeSchema = `"${targetSchema.replace(/"/g, '""')}"`;
     const safeTable = `"${targetTable.replace(/"/g, '""')}"`;
     const safeCol = `"${targetCol.replace(/"/g, '""')}"`;
@@ -703,11 +740,10 @@ export class PostgresDriver implements DbDriver {
       }
       sql += ';';
 
-      await client.query(sql);
-      await this.safeEnd(client);
+      await pool.query(sql);
       return true;
     } catch (err: any) {
-      await this.safeEnd(client);
+      await this.evictIfFatal(config, err);
       throw new DriverError(
         err.code || 'PG_ADD_COLUMN_ERROR',
         `Failed to add column "${options.columnName}" to "${targetSchema}.${table}": ${err.message}`,
@@ -727,13 +763,13 @@ export class PostgresDriver implements DbDriver {
     const referencedTable = this.validateIdentifier(options.referencedTable, 'referencedTable');
     const referencedColumn = this.validateIdentifier(options.referencedColumn, 'referencedColumn');
 
-    const client = await this.getClient(config);
+    const pool = await this.getPool(config);
     const safeSchema = `"${targetSchema.replace(/"/g, '""')}"`;
     const safeSourceTable = `"${sourceTable.replace(/"/g, '""')}"`;
     const safeSourceCol = `"${sourceColumn.replace(/"/g, '""')}"`;
     const safeTargetTable = `"${referencedTable.replace(/"/g, '""')}"`;
     const safeTargetCol = `"${referencedColumn.replace(/"/g, '""')}"`;
-    
+
     const fkName = options.constraintName || `fk_${sourceTable}_${sourceColumn}_${Date.now().toString().slice(-4)}`;
     const safeFkName = `"${this.validateIdentifier(fkName, 'constraintName').replace(/"/g, '""')}"`;
     const onDelete = ['CASCADE', 'SET NULL', 'RESTRICT', 'NO ACTION'].includes(options.onDelete?.toUpperCase() || '')
@@ -742,11 +778,10 @@ export class PostgresDriver implements DbDriver {
 
     try {
       const sql = `ALTER TABLE ${safeSchema}.${safeSourceTable} ADD CONSTRAINT ${safeFkName} FOREIGN KEY (${safeSourceCol}) REFERENCES ${safeSchema}.${safeTargetTable} (${safeTargetCol}) ON DELETE ${onDelete};`;
-      await client.query(sql);
-      await this.safeEnd(client);
+      await pool.query(sql);
       return true;
     } catch (err: any) {
-      await this.safeEnd(client);
+      await this.evictIfFatal(config, err);
       throw new DriverError(
         err.code || 'PG_ADD_FK_ERROR',
         `Failed to create foreign key relationship: ${err.message}`,
@@ -763,17 +798,16 @@ export class PostgresDriver implements DbDriver {
     const targetSchema = this.validateIdentifier(schema || 'public', 'schema');
     const targetTable = this.validateIdentifier(table, 'table');
 
-    const client = await this.getClient(config);
+    const pool = await this.getPool(config);
     const safeSchema = `"${targetSchema.replace(/"/g, '""')}"`;
     const safeTable = `"${targetTable.replace(/"/g, '""')}"`;
 
     try {
       const sql = `DROP TABLE IF EXISTS ${safeSchema}.${safeTable} CASCADE;`;
-      await client.query(sql);
-      await this.safeEnd(client);
+      await pool.query(sql);
       return true;
     } catch (err: any) {
-      await this.safeEnd(client);
+      await this.evictIfFatal(config, err);
       throw new DriverError(
         err.code || 'PG_DROP_TABLE_ERROR',
         `Failed to drop table "${targetSchema}.${table}": ${err.message}`,
@@ -822,4 +856,8 @@ export class PostgresDriver implements DbDriver {
     }
     return 'UNKNOWN';
   }
+}
+
+export async function closePostgresPools(): Promise<void> {
+  await pools.closeAll();
 }

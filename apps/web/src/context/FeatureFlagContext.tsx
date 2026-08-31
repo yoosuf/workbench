@@ -57,7 +57,7 @@ export const FeatureFlagProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
   const setOverride = async (key: string, enabled: boolean) => {
     await setFlagMutation({ variables: { key, enabled } });
-    refetch();
+    void refetch();
   };
 
   return (

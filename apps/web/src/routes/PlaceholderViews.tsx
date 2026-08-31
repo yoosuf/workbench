@@ -8,7 +8,7 @@ export const ConnectionsPlaceholder: React.FC = () => (
     </div>
     <h2 className="text-lg font-bold text-white">Connections Management</h2>
     <p className="text-xs text-slate-400 max-w-sm mt-1">
-      M1 Milestone will enable configuring, testing, and managing MySQL & PostgreSQL database connections.
+      M1 Milestone will enable configuring, testing, and managing MySQL, PostgreSQL & SQL Server database connections.
     </p>
   </div>
 );

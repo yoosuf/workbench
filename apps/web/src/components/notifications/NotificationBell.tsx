@@ -51,15 +51,15 @@ export const NotificationBell: React.FC = () => {
   const handleToggle = () => {
     setIsOpen(!isOpen);
     if (!isOpen) {
-      refetchList();
+      void refetchList();
     }
   };
 
   const handleMarkRead = async (id: string) => {
     try {
       await markRead({ variables: { id } });
-      refetchCount();
-      refetchList();
+      void refetchCount();
+      void refetchList();
     } catch (err) {
       console.error('Failed to mark notification read:', err);
     }
@@ -68,8 +68,8 @@ export const NotificationBell: React.FC = () => {
   const handleMarkAllRead = async () => {
     try {
       await markAllRead();
-      refetchCount();
-      refetchList();
+      void refetchCount();
+      void refetchList();
     } catch (err) {
       console.error('Failed to mark all notifications read:', err);
     }

@@ -1,20 +1,87 @@
-import mysql, { Connection } from 'mysql2/promise';
+import mysql, { Pool, PoolConnection } from 'mysql2/promise';
 import {
   AddColumnOptions,
   AddForeignKeyOptions,
   ColumnMeta,
   ConnectionConfig,
   CreateTableOptions,
+  DatabaseUserMeta,
   DbDriver,
   ForeignKeyMeta,
+  GrantPermissionOptions,
   IndexMeta,
   QueryResult,
+  RevokePermissionOptions,
+  SchemaPermissionMeta,
   TableDataOptions,
   TableDataResult,
   TableMeta,
   DataKind,
 } from '../types';
 import { DriverError } from '../errors';
+import { PoolCache } from '../pool-cache';
+
+const FATAL_CONNECTION_CODES = new Set([
+  'ECONNREFUSED',
+  'ECONNRESET',
+  'ETIMEDOUT',
+  'ENOTFOUND',
+  'EHOSTUNREACH',
+  'EPIPE',
+  'PROTOCOL_CONNECTION_LOST',
+  'ER_ACCESS_DENIED_ERROR',
+  'ER_CON_COUNT_ERROR',
+  'ER_SERVER_SHUTDOWN',
+  'ER_DBACCESS_DENIED_ERROR',
+]);
+
+function resolveSsl(config: ConnectionConfig): any {
+  if (!config.ssl) return undefined;
+  if (typeof config.ssl === 'boolean') {
+    return config.ssl ? { rejectUnauthorized: false } : undefined;
+  }
+  if (config.ssl.sslMode === 'disable') {
+    return undefined;
+  }
+  return {
+    rejectUnauthorized: config.ssl.rejectUnauthorized ?? false,
+    ca: config.ssl.ca,
+  };
+}
+
+// Long-lived, shared across all MySqlDriver instances (the factory creates a fresh instance
+// per call) so repeated operations against the same saved connection reuse one warm pool
+// instead of paying a fresh TCP+auth handshake every time.
+const pools = new PoolCache<Pool>({
+  create: async (config) => {
+    const pool = mysql.createPool({
+      host: config.host,
+      port: config.port,
+      database: config.database,
+      user: config.username,
+      password: config.password,
+      ssl: resolveSsl(config),
+      connectTimeout: 10000,
+      multipleStatements: true,
+      connectionLimit: 5,
+      idleTimeout: 30000,
+      waitForConnections: true,
+    });
+    // A pooled connection can emit a background 'error' if it goes bad while idle. Without
+    // this listener that would crash the whole process.
+    pool.on('connection', (conn) => conn.on('error', () => {}));
+    try {
+      await pool.query('SELECT 1');
+    } catch (err) {
+      await pool.end().catch(() => {});
+      throw err;
+    }
+    return pool;
+  },
+  destroy: async (pool) => {
+    await pool.end();
+  },
+});
 
 export class MySqlDriver implements DbDriver {
   private validateIdentifier(name: string, label: string): string {
@@ -31,34 +98,9 @@ export class MySqlDriver implements DbDriver {
     return sanitized;
   }
 
-  private resolveSsl(config: ConnectionConfig): any {
-    if (!config.ssl) return undefined;
-    if (typeof config.ssl === 'boolean') {
-      return config.ssl ? { rejectUnauthorized: false } : undefined;
-    }
-    if (config.ssl.sslMode === 'disable') {
-      return undefined;
-    }
-    return {
-      rejectUnauthorized: config.ssl.rejectUnauthorized ?? false,
-      ca: config.ssl.ca,
-    };
-  }
-
-  private async getConnection(config: ConnectionConfig): Promise<Connection> {
-    const ssl = this.resolveSsl(config);
+  private async getPool(config: ConnectionConfig): Promise<Pool> {
     try {
-      const conn = await mysql.createConnection({
-        host: config.host,
-        port: config.port,
-        database: config.database,
-        user: config.username,
-        password: config.password,
-        ssl,
-        connectTimeout: 10000,
-        multipleStatements: true,
-      });
-      return conn;
+      return await pools.get(config);
     } catch (err: any) {
       throw new DriverError(
         err.code || 'MYSQL_CONNECTION_ERROR',
@@ -68,22 +110,36 @@ export class MySqlDriver implements DbDriver {
     }
   }
 
-  private async safeEnd(conn: Connection): Promise<void> {
-    try {
-      await conn.end();
-    } catch {
-      // Ignore cleanup error
+  private async evictIfFatal(config: ConnectionConfig, err: any): Promise<void> {
+    if (FATAL_CONNECTION_CODES.has(err?.code)) {
+      await pools.evict(config);
     }
   }
 
   async testConnection(config: ConnectionConfig): Promise<boolean> {
-    const conn = await this.getConnection(config);
+    // Ad-hoc check against possibly-unsaved credentials (e.g. the "Test Connection" button) —
+    // deliberately not cached, so we don't pollute the pool cache with throwaway attempts.
+    const conn = await mysql.createConnection({
+      host: config.host,
+      port: config.port,
+      database: config.database,
+      user: config.username,
+      password: config.password,
+      ssl: resolveSsl(config),
+      connectTimeout: 10000,
+    }).catch((err: any) => {
+      throw new DriverError(
+        err.code || 'MYSQL_CONNECTION_ERROR',
+        `Failed to connect to MySQL: ${err.message}`,
+        err,
+      );
+    });
     try {
       await conn.query('SELECT 1');
-      await this.safeEnd(conn);
+      await conn.end();
       return true;
     } catch (err: any) {
-      await this.safeEnd(conn);
+      await conn.end().catch(() => {});
       throw new DriverError(
         err.code || 'MYSQL_TEST_ERROR',
         `MySQL test connection failed: ${err.message}`,
@@ -93,18 +149,17 @@ export class MySqlDriver implements DbDriver {
   }
 
   async listSchemas(config: ConnectionConfig): Promise<string[]> {
-    const conn = await this.getConnection(config);
+    const pool = await this.getPool(config);
     try {
-      const [rows] = (await conn.query(`
-        SELECT SCHEMA_NAME 
-        FROM information_schema.SCHEMATA 
+      const [rows] = (await pool.query(`
+        SELECT SCHEMA_NAME
+        FROM information_schema.SCHEMATA
         WHERE SCHEMA_NAME NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')
         ORDER BY SCHEMA_NAME ASC;
       `)) as any;
-      await this.safeEnd(conn);
       return rows.map((r: any) => r.SCHEMA_NAME);
     } catch (err: any) {
-      await this.safeEnd(conn);
+      await this.evictIfFatal(config, err);
       throw new DriverError(
         err.code || 'MYSQL_LIST_SCHEMAS_ERROR',
         `Failed to list schemas: ${err.message}`,
@@ -115,13 +170,12 @@ export class MySqlDriver implements DbDriver {
 
   async createSchema(config: ConnectionConfig, schemaName: string): Promise<boolean> {
     const validName = this.validateIdentifier(schemaName, 'schema name');
-    const conn = await this.getConnection(config);
+    const pool = await this.getPool(config);
     try {
-      await conn.query(`CREATE DATABASE IF NOT EXISTS \`${validName}\``);
-      await this.safeEnd(conn);
+      await pool.query(`CREATE DATABASE IF NOT EXISTS \`${validName}\``);
       return true;
     } catch (err: any) {
-      await this.safeEnd(conn);
+      await this.evictIfFatal(config, err);
       throw new DriverError(
         err.code || 'MYSQL_CREATE_SCHEMA_ERROR',
         `Failed to create schema "${schemaName}": ${err.message}`,
@@ -135,13 +189,12 @@ export class MySqlDriver implements DbDriver {
     if (['mysql', 'information_schema', 'performance_schema', 'sys'].includes(validName.toLowerCase())) {
       throw new DriverError('PROHIBITED_OPERATION', `Cannot drop system schema "${validName}"`);
     }
-    const conn = await this.getConnection(config);
+    const pool = await this.getPool(config);
     try {
-      await conn.query(`DROP DATABASE IF EXISTS \`${validName}\``);
-      await this.safeEnd(conn);
+      await pool.query(`DROP DATABASE IF EXISTS \`${validName}\``);
       return true;
     } catch (err: any) {
-      await this.safeEnd(conn);
+      await this.evictIfFatal(config, err);
       throw new DriverError(
         err.code || 'MYSQL_DROP_SCHEMA_ERROR',
         `Failed to drop schema "${schemaName}": ${err.message}`,
@@ -150,37 +203,34 @@ export class MySqlDriver implements DbDriver {
     }
   }
 
-  async listDatabaseUsers(config: ConnectionConfig): Promise<any[]> {
-    const conn = await this.getConnection(config);
+  async listDatabaseUsers(config: ConnectionConfig): Promise<DatabaseUserMeta[]> {
+    const pool = await this.getPool(config);
     try {
-      const [rows] = (await conn.query(
+      const [rows] = (await pool.query(
         `SELECT DISTINCT User AS username, Host AS host FROM mysql.user ORDER BY User ASC`,
       )) as any;
-      await this.safeEnd(conn);
       return rows.map((r: any) => ({
         username: r.username,
         host: r.host,
         isSuperuser: false,
       }));
     } catch {
-      await this.safeEnd(conn);
       return [{ username: config.username, host: '%', isSuperuser: true }];
     }
   }
 
-  async getSchemaPermissions(config: ConnectionConfig, schemaName: string): Promise<any[]> {
+  async getSchemaPermissions(config: ConnectionConfig, schemaName: string): Promise<SchemaPermissionMeta[]> {
     const validName = this.validateIdentifier(schemaName, 'schema');
-    const conn = await this.getConnection(config);
+    const pool = await this.getPool(config);
     try {
-      const [rows] = (await conn.query(
+      const [rows] = (await pool.query(
         `
-        SELECT User AS grantee, Db AS schema_name, Select_priv, Insert_priv, Update_priv, Delete_priv, Create_priv, Drop_priv 
-        FROM mysql.db 
+        SELECT User AS grantee, Db AS schema_name, Select_priv, Insert_priv, Update_priv, Delete_priv, Create_priv, Drop_priv
+        FROM mysql.db
         WHERE Db = ?
       `,
         [validName],
       )) as any;
-      await this.safeEnd(conn);
       const permissions: any[] = [];
       for (const r of rows) {
         if (r.Select_priv === 'Y') permissions.push({ grantee: r.grantee, privilege: 'SELECT' });
@@ -192,25 +242,23 @@ export class MySqlDriver implements DbDriver {
       }
       return permissions;
     } catch {
-      await this.safeEnd(conn);
       return [];
     }
   }
 
-  async grantSchemaPermission(config: ConnectionConfig, options: any): Promise<boolean> {
+  async grantSchemaPermission(config: ConnectionConfig, options: GrantPermissionOptions): Promise<boolean> {
     const schema = this.validateIdentifier(options.schema, 'schema');
     const username = this.validateIdentifier(options.username, 'username');
     const privilege = options.privilege.toUpperCase();
-    const conn = await this.getConnection(config);
+    const pool = await this.getPool(config);
     try {
-      await conn.query(
+      await pool.query(
         `GRANT ${privilege === 'USAGE' ? 'ALL PRIVILEGES' : privilege} ON \`${schema}\`.* TO '${username}'@'%'`,
       );
-      await conn.query(`FLUSH PRIVILEGES`);
-      await this.safeEnd(conn);
+      await pool.query(`FLUSH PRIVILEGES`);
       return true;
     } catch (err: any) {
-      await this.safeEnd(conn);
+      await this.evictIfFatal(config, err);
       throw new DriverError(
         err.code || 'MYSQL_GRANT_ERROR',
         `Failed to grant permission: ${err.message}`,
@@ -219,18 +267,17 @@ export class MySqlDriver implements DbDriver {
     }
   }
 
-  async revokeSchemaPermission(config: ConnectionConfig, options: any): Promise<boolean> {
+  async revokeSchemaPermission(config: ConnectionConfig, options: RevokePermissionOptions): Promise<boolean> {
     const schema = this.validateIdentifier(options.schema, 'schema');
     const username = this.validateIdentifier(options.username, 'username');
     const privilege = options.privilege.toUpperCase();
-    const conn = await this.getConnection(config);
+    const pool = await this.getPool(config);
     try {
-      await conn.query(`REVOKE ${privilege} ON \`${schema}\`.* FROM '${username}'@'%'`);
-      await conn.query(`FLUSH PRIVILEGES`);
-      await this.safeEnd(conn);
+      await pool.query(`REVOKE ${privilege} ON \`${schema}\`.* FROM '${username}'@'%'`);
+      await pool.query(`FLUSH PRIVILEGES`);
       return true;
     } catch (err: any) {
-      await this.safeEnd(conn);
+      await this.evictIfFatal(config, err);
       throw new DriverError(
         err.code || 'MYSQL_REVOKE_ERROR',
         `Failed to revoke permission: ${err.message}`,
@@ -240,19 +287,18 @@ export class MySqlDriver implements DbDriver {
   }
 
   async listTables(config: ConnectionConfig, schema: string): Promise<TableMeta[]> {
-    const conn = await this.getConnection(config);
+    const pool = await this.getPool(config);
     const targetSchema = this.validateIdentifier(schema || config.database, 'schema');
     try {
-      const [rows] = (await conn.query(
+      const [rows] = (await pool.query(
         `
-        SELECT TABLE_NAME, TABLE_TYPE 
-        FROM information_schema.TABLES 
+        SELECT TABLE_NAME, TABLE_TYPE
+        FROM information_schema.TABLES
         WHERE TABLE_SCHEMA = ?
         ORDER BY TABLE_NAME ASC;
       `,
         [targetSchema],
       )) as any;
-      await this.safeEnd(conn);
 
       return rows.map((r: any) => ({
         name: r.TABLE_NAME,
@@ -260,7 +306,7 @@ export class MySqlDriver implements DbDriver {
         schema: targetSchema,
       }));
     } catch (err: any) {
-      await this.safeEnd(conn);
+      await this.evictIfFatal(config, err);
       throw new DriverError(
         err.code || 'MYSQL_LIST_TABLES_ERROR',
         `Failed to list tables for schema "${targetSchema}": ${err.message}`,
@@ -274,13 +320,13 @@ export class MySqlDriver implements DbDriver {
     schema: string,
     table: string,
   ): Promise<ColumnMeta[]> {
-    const conn = await this.getConnection(config);
+    const pool = await this.getPool(config);
     const targetSchema = this.validateIdentifier(schema || config.database, 'schema');
     const targetTable = this.validateIdentifier(table, 'table');
     try {
-      const [rows] = (await conn.query(
+      const [rows] = (await pool.query(
         `
-        SELECT 
+        SELECT
           COLUMN_NAME,
           DATA_TYPE,
           COLUMN_TYPE,
@@ -288,13 +334,12 @@ export class MySqlDriver implements DbDriver {
           COLUMN_DEFAULT,
           EXTRA,
           ORDINAL_POSITION
-        FROM information_schema.COLUMNS 
+        FROM information_schema.COLUMNS
         WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?
         ORDER BY ORDINAL_POSITION ASC;
       `,
         [targetSchema, targetTable],
       )) as any;
-      await this.safeEnd(conn);
 
       return rows.map((r: any) => {
         const isAutoInc = (r.EXTRA || '').toLowerCase().includes('auto_increment');
@@ -309,7 +354,7 @@ export class MySqlDriver implements DbDriver {
         };
       });
     } catch (err: any) {
-      await this.safeEnd(conn);
+      await this.evictIfFatal(config, err);
       throw new DriverError(
         err.code || 'MYSQL_GET_COLUMNS_ERROR',
         `Failed to get columns for table "${targetSchema}.${table}": ${err.message}`,
@@ -323,11 +368,11 @@ export class MySqlDriver implements DbDriver {
     schema: string,
     table: string,
   ): Promise<string[]> {
-    const conn = await this.getConnection(config);
+    const pool = await this.getPool(config);
     const targetSchema = this.validateIdentifier(schema || config.database, 'schema');
     const targetTable = this.validateIdentifier(table, 'table');
     try {
-      const [rows] = (await conn.query(
+      const [rows] = (await pool.query(
         `
         SELECT COLUMN_NAME
         FROM information_schema.KEY_COLUMN_USAGE
@@ -338,10 +383,9 @@ export class MySqlDriver implements DbDriver {
       `,
         [targetSchema, targetTable],
       )) as any;
-      await this.safeEnd(conn);
       return rows.map((r: any) => r.COLUMN_NAME);
     } catch (err: any) {
-      await this.safeEnd(conn);
+      await this.evictIfFatal(config, err);
       throw new DriverError(
         err.code || 'MYSQL_GET_PK_ERROR',
         `Failed to get primary key for table "${targetSchema}.${table}": ${err.message}`,
@@ -355,11 +399,11 @@ export class MySqlDriver implements DbDriver {
     schema: string,
     table: string,
   ): Promise<ForeignKeyMeta[]> {
-    const conn = await this.getConnection(config);
+    const pool = await this.getPool(config);
     const targetSchema = this.validateIdentifier(schema || config.database, 'schema');
     const targetTable = this.validateIdentifier(table, 'table');
     try {
-      const [rows] = (await conn.query(
+      const [rows] = (await pool.query(
         `
         SELECT
           kcu.CONSTRAINT_NAME,
@@ -379,7 +423,6 @@ export class MySqlDriver implements DbDriver {
       `,
         [targetSchema, targetTable],
       )) as any;
-      await this.safeEnd(conn);
 
       const fkMap = new Map<string, ForeignKeyMeta>();
       for (const row of rows) {
@@ -405,7 +448,7 @@ export class MySqlDriver implements DbDriver {
 
       return Array.from(fkMap.values());
     } catch (err: any) {
-      await this.safeEnd(conn);
+      await this.evictIfFatal(config, err);
       throw new DriverError(
         err.code || 'MYSQL_GET_FOREIGN_KEYS_ERROR',
         `Failed to get foreign keys for table "${targetSchema}.${table}": ${err.message}`,
@@ -419,11 +462,11 @@ export class MySqlDriver implements DbDriver {
     schema: string,
     table: string,
   ): Promise<IndexMeta[]> {
-    const conn = await this.getConnection(config);
+    const pool = await this.getPool(config);
     const targetSchema = this.validateIdentifier(schema || config.database, 'schema');
     const targetTable = this.validateIdentifier(table, 'table');
     try {
-      const [rows] = (await conn.query(
+      const [rows] = (await pool.query(
         `
         SELECT
           INDEX_NAME,
@@ -436,7 +479,6 @@ export class MySqlDriver implements DbDriver {
       `,
         [targetSchema, targetTable],
       )) as any;
-      await this.safeEnd(conn);
 
       const idxMap = new Map<string, IndexMeta>();
       for (const row of rows) {
@@ -454,7 +496,7 @@ export class MySqlDriver implements DbDriver {
 
       return Array.from(idxMap.values());
     } catch (err: any) {
-      await this.safeEnd(conn);
+      await this.evictIfFatal(config, err);
       throw new DriverError(
         err.code || 'MYSQL_GET_INDEXES_ERROR',
         `Failed to get indexes for table "${targetSchema}.${table}": ${err.message}`,
@@ -468,8 +510,11 @@ export class MySqlDriver implements DbDriver {
     sql: string,
     options: { timeoutMs: number; maxRows: number },
   ): Promise<QueryResult> {
-    const conn = await this.getConnection(config);
+    const pool = await this.getPool(config);
     const start = Date.now();
+    // max_execution_time is a per-connection session setting, so it and the query it guards
+    // must run on the same checked-out connection rather than two independent pool.query() calls.
+    const conn: PoolConnection = await pool.getConnection();
     try {
       if (options.timeoutMs) {
         await conn.query(`SET SESSION max_execution_time = ${Number(options.timeoutMs)}`);
@@ -496,8 +541,6 @@ export class MySqlDriver implements DbDriver {
       const isTruncated = totalReturned > options.maxRows;
       const slicedRows = isTruncated ? rawRows.slice(0, options.maxRows) : rawRows;
 
-      await this.safeEnd(conn);
-
       return {
         columns,
         rows: slicedRows,
@@ -506,12 +549,14 @@ export class MySqlDriver implements DbDriver {
         truncated: isTruncated,
       };
     } catch (err: any) {
-      await this.safeEnd(conn);
+      await this.evictIfFatal(config, err);
       throw new DriverError(
         err.code || 'MYSQL_QUERY_EXECUTION_ERROR',
         `Query Execution Error: ${err.message}`,
         err,
       );
+    } finally {
+      conn.release();
     }
   }
 
@@ -521,7 +566,7 @@ export class MySqlDriver implements DbDriver {
     table: string,
     options?: TableDataOptions,
   ): Promise<TableDataResult> {
-    const conn = await this.getConnection(config);
+    const pool = await this.getPool(config);
     const targetSchema = this.validateIdentifier(schema || config.database, 'schema');
     const targetTable = this.validateIdentifier(table, 'table');
     const safeSchema = `\`${targetSchema.replace(/`/g, '``')}\``;
@@ -532,7 +577,7 @@ export class MySqlDriver implements DbDriver {
 
     try {
       // 1. Total count
-      const [countRes] = (await conn.query(
+      const [countRes] = (await pool.query(
         `SELECT COUNT(*) AS count FROM ${safeSchema}.${safeTable}`,
       )) as any;
       const totalCount = Number(countRes[0]?.count ?? 0);
@@ -546,8 +591,6 @@ export class MySqlDriver implements DbDriver {
         querySql += ` ORDER BY ${safeSort} ${sortDir}`;
       }
       querySql += ` LIMIT ${Number(limit)} OFFSET ${Number(offset)}`;
-
-      await this.safeEnd(conn);
 
       const qResult = await this.executeQuery(config, querySql, {
         timeoutMs: 30000,
@@ -563,7 +606,7 @@ export class MySqlDriver implements DbDriver {
         sortOrder: options?.sortOrder ?? null,
       };
     } catch (err: any) {
-      await this.safeEnd(conn);
+      await this.evictIfFatal(config, err);
       throw new DriverError(
         err.code || 'MYSQL_GET_TABLE_DATA_ERROR',
         `Failed to browse table data for "${targetSchema}.${table}": ${err.message}`,
@@ -577,7 +620,7 @@ export class MySqlDriver implements DbDriver {
     schema: string,
     options: CreateTableOptions,
   ): Promise<boolean> {
-    const conn = await this.getConnection(config);
+    const pool = await this.getPool(config);
     const targetSchema = this.validateIdentifier(schema || config.database, 'schema');
     const targetTable = this.validateIdentifier(options.tableName, 'tableName');
     const pkColumnName = this.validateIdentifier(options.primaryKeyColumn || 'id', 'primaryKeyColumn');
@@ -615,11 +658,10 @@ export class MySqlDriver implements DbDriver {
 
     try {
       const sql = `CREATE TABLE IF NOT EXISTS ${safeSchema}.${safeTable} (\n  ${colDefs.join(',\n  ')}\n);`;
-      await conn.query(sql);
-      await this.safeEnd(conn);
+      await pool.query(sql);
       return true;
     } catch (err: any) {
-      await this.safeEnd(conn);
+      await this.evictIfFatal(config, err);
       throw new DriverError(
         err.code || 'MYSQL_CREATE_TABLE_ERROR',
         `Failed to create table "${targetSchema}.${options.tableName}": ${err.message}`,
@@ -634,7 +676,7 @@ export class MySqlDriver implements DbDriver {
     table: string,
     options: AddColumnOptions,
   ): Promise<boolean> {
-    const conn = await this.getConnection(config);
+    const pool = await this.getPool(config);
     const targetSchema = this.validateIdentifier(schema || config.database, 'schema');
     const targetTable = this.validateIdentifier(table, 'table');
     const targetCol = this.validateIdentifier(options.columnName, 'columnName');
@@ -656,11 +698,10 @@ export class MySqlDriver implements DbDriver {
       }
       sql += ';';
 
-      await conn.query(sql);
-      await this.safeEnd(conn);
+      await pool.query(sql);
       return true;
     } catch (err: any) {
-      await this.safeEnd(conn);
+      await this.evictIfFatal(config, err);
       throw new DriverError(
         err.code || 'MYSQL_ADD_COLUMN_ERROR',
         `Failed to add column "${options.columnName}" to "${targetSchema}.${table}": ${err.message}`,
@@ -674,7 +715,7 @@ export class MySqlDriver implements DbDriver {
     schema: string,
     options: AddForeignKeyOptions,
   ): Promise<boolean> {
-    const conn = await this.getConnection(config);
+    const pool = await this.getPool(config);
     const targetSchema = this.validateIdentifier(schema || config.database, 'schema');
     const sourceTable = this.validateIdentifier(options.sourceTable, 'sourceTable');
     const sourceColumn = this.validateIdentifier(options.sourceColumn, 'sourceColumn');
@@ -686,7 +727,7 @@ export class MySqlDriver implements DbDriver {
     const safeSourceCol = `\`${sourceColumn.replace(/`/g, '``')}\``;
     const safeTargetTable = `\`${referencedTable.replace(/`/g, '``')}\``;
     const safeTargetCol = `\`${referencedColumn.replace(/`/g, '``')}\``;
-    
+
     const fkName = options.constraintName || `fk_${sourceTable}_${sourceColumn}_${Date.now().toString().slice(-4)}`;
     const safeFkName = `\`${this.validateIdentifier(fkName, 'constraintName').replace(/`/g, '``')}\``;
     const onDelete = ['CASCADE', 'SET NULL', 'RESTRICT', 'NO ACTION'].includes(options.onDelete?.toUpperCase() || '')
@@ -695,11 +736,10 @@ export class MySqlDriver implements DbDriver {
 
     try {
       const sql = `ALTER TABLE ${safeSchema}.${safeSourceTable} ADD CONSTRAINT ${safeFkName} FOREIGN KEY (${safeSourceCol}) REFERENCES ${safeSchema}.${safeTargetTable} (${safeTargetCol}) ON DELETE ${onDelete};`;
-      await conn.query(sql);
-      await this.safeEnd(conn);
+      await pool.query(sql);
       return true;
     } catch (err: any) {
-      await this.safeEnd(conn);
+      await this.evictIfFatal(config, err);
       throw new DriverError(
         err.code || 'MYSQL_ADD_FK_ERROR',
         `Failed to create foreign key relationship: ${err.message}`,
@@ -713,7 +753,7 @@ export class MySqlDriver implements DbDriver {
     schema: string,
     table: string,
   ): Promise<boolean> {
-    const conn = await this.getConnection(config);
+    const pool = await this.getPool(config);
     const targetSchema = this.validateIdentifier(schema || config.database, 'schema');
     const targetTable = this.validateIdentifier(table, 'table');
     const safeSchema = `\`${targetSchema.replace(/`/g, '``')}\``;
@@ -721,11 +761,10 @@ export class MySqlDriver implements DbDriver {
 
     try {
       const sql = `DROP TABLE IF EXISTS ${safeSchema}.${safeTable};`;
-      await conn.query(sql);
-      await this.safeEnd(conn);
+      await pool.query(sql);
       return true;
     } catch (err: any) {
-      await this.safeEnd(conn);
+      await this.evictIfFatal(config, err);
       throw new DriverError(
         err.code || 'MYSQL_DROP_TABLE_ERROR',
         `Failed to drop table "${targetSchema}.${table}": ${err.message}`,
@@ -771,4 +810,8 @@ export class MySqlDriver implements DbDriver {
     }
     return 'UNKNOWN';
   }
+}
+
+export async function closeMysqlPools(): Promise<void> {
+  await pools.closeAll();
 }

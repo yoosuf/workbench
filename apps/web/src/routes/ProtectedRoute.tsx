@@ -41,7 +41,7 @@ export const ProtectedRoute: React.FC = () => {
       }
     };
 
-    verifySession();
+    void verifySession();
 
     return () => {
       isMounted = false;

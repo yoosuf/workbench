@@ -1,6 +1,7 @@
 export enum Engine {
   MYSQL = 'MYSQL',
   POSTGRES = 'POSTGRES',
+  MSSQL = 'MSSQL',
 }
 
 export interface UserDto {

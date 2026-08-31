@@ -54,7 +54,7 @@ export const OverviewPage: React.FC = () => {
       </div>
 
       {/* Live Service Status Strip */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
         <div className="p-3.5 rounded-xl bg-[#161b22] border border-[#30363d] flex items-center justify-between font-mono text-xs shadow-sm">
           <div className="flex items-center space-x-2.5">
             <span className="w-2 h-2 rounded-full bg-[#3fb950] animate-pulse" />
@@ -72,6 +72,16 @@ export const OverviewPage: React.FC = () => {
           </div>
           <span className="text-[#3fb950] font-semibold text-[11px] bg-[#3fb950]/10 px-2 py-0.5 rounded border border-[#3fb950]/20">
             :3307 (Online)
+          </span>
+        </div>
+
+        <div className="p-3.5 rounded-xl bg-[#161b22] border border-[#30363d] flex items-center justify-between font-mono text-xs shadow-sm">
+          <div className="flex items-center space-x-2.5">
+            <span className="w-2 h-2 rounded-full bg-[#3fb950] animate-pulse" />
+            <span className="text-[#c9d1d9] font-medium">SQL Server 2022</span>
+          </div>
+          <span className="text-[#3fb950] font-semibold text-[11px] bg-[#3fb950]/10 px-2 py-0.5 rounded border border-[#3fb950]/20">
+            :1434 (Online)
           </span>
         </div>
 
@@ -101,6 +111,7 @@ export const OverviewPage: React.FC = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {connections.map((conn: any) => {
             const isPg = conn.engine === 'POSTGRES';
+            const isMssql = conn.engine === 'MSSQL';
             return (
               <div
                 key={conn.id}
@@ -114,7 +125,9 @@ export const OverviewPage: React.FC = () => {
                         className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-sm shadow-inner shrink-0 ${
                           isPg
                             ? 'bg-[#336791]/15 text-[#58a6ff] border border-[#336791]/40'
-                            : 'bg-[#00758f]/15 text-[#38bdf8] border border-[#00758f]/40'
+                            : isMssql
+                              ? 'bg-[#a855f7]/15 text-[#c084fc] border border-[#a855f7]/40'
+                              : 'bg-[#00758f]/15 text-[#38bdf8] border border-[#00758f]/40'
                         }`}
                       >
                         <Database className="w-5 h-5" />
@@ -238,7 +251,7 @@ export const OverviewPage: React.FC = () => {
         onClose={() => setModalOpen(false)}
         onSuccess={() => {
           setModalOpen(false);
-          refetchConns();
+          void refetchConns();
         }}
       />
     </div>

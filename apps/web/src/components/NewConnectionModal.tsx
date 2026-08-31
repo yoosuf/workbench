@@ -1,13 +1,14 @@
 import React, { useState } from 'react';
 import { useMutation } from '@apollo/client';
-import { 
-  X, 
-  Database, 
-  CheckCircle2, 
-  AlertCircle, 
-  Loader2, 
-  Server, 
-  Layers, 
+import {
+  X,
+  Database,
+  CheckCircle2,
+  AlertCircle,
+  Loader2,
+  Server,
+  Layers,
+  HardDrive,
   Sparkles,
   Play,
   ShieldCheck,
@@ -55,23 +56,31 @@ export const NewConnectionModal: React.FC<NewConnectionModalProps> = ({
 
   if (!isOpen) return null;
 
+  const isDefaultName = (n: string) =>
+    !n || ['PostgreSQL', 'MySQL', 'SQL Server'].some((label) => n.includes(label));
+
   const handleEngineChange = (newEngine: Engine) => {
     setEngine(newEngine);
     setTestResult(null);
     if (newEngine === Engine.POSTGRES) {
-      if (!name || name.includes('MySQL')) setName('PostgreSQL Target (Sample)');
+      if (isDefaultName(name)) setName('PostgreSQL Target (Sample)');
       setPort(5433);
       setUsername('postgres');
       setPassword('postgrespassword');
-    } else {
-      if (!name || name.includes('Postgres')) setName('MySQL Target (Sample)');
+    } else if (newEngine === Engine.MYSQL) {
+      if (isDefaultName(name)) setName('MySQL Target (Sample)');
       setPort(3307);
       setUsername('root');
       setPassword('mysqlpassword');
+    } else {
+      if (isDefaultName(name)) setName('SQL Server Target (Sample)');
+      setPort(1434);
+      setUsername('sa');
+      setPassword('MssqlPassword1!');
     }
   };
 
-  const handlePresetCloud = (preset: 'supabase' | 'rds' | 'neon') => {
+  const handlePresetCloud = (preset: 'supabase' | 'rds' | 'neon' | 'azuresql') => {
     setTestResult(null);
     setSslEnabled(true);
     setSslMode('require');
@@ -98,6 +107,14 @@ export const NewConnectionModal: React.FC<NewConnectionModalProps> = ({
       setPort(3306);
       setDatabase('production');
       setUsername('admin');
+      setPassword('');
+    } else if (preset === 'azuresql') {
+      setEngine(Engine.MSSQL);
+      setName('Azure SQL Database');
+      setHost('my-server.database.windows.net');
+      setPort(1433);
+      setDatabase('production');
+      setUsername('sqladmin');
       setPassword('');
     }
   };
@@ -187,7 +204,7 @@ export const NewConnectionModal: React.FC<NewConnectionModalProps> = ({
             <label className="block text-xs font-semibold text-[#8b949e] uppercase tracking-wider mb-2">
               Select Database Engine
             </label>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-3 gap-3">
               {/* PostgreSQL Option */}
               <button
                 type="button"
@@ -225,6 +242,25 @@ export const NewConnectionModal: React.FC<NewConnectionModalProps> = ({
                   <div className="text-[11px] text-[#8b949e]">Native driver (mysql2)</div>
                 </div>
               </button>
+
+              {/* MSSQL Option */}
+              <button
+                type="button"
+                onClick={() => handleEngineChange(Engine.MSSQL)}
+                className={`flex items-center space-x-3 p-3.5 rounded-xl border text-left transition-all ${
+                  engine === Engine.MSSQL
+                    ? 'bg-[#a855f7]/15 border-[#a855f7] shadow-md'
+                    : 'bg-[#0d1117] border-[#30363d] hover:border-[#8b949e] opacity-70'
+                }`}
+              >
+                <div className="w-10 h-10 rounded-lg bg-[#a855f7]/20 border border-[#a855f7]/30 flex items-center justify-center text-[#c084fc]">
+                  <HardDrive className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="text-xs font-bold text-white">SQL Server</div>
+                  <div className="text-[11px] text-[#8b949e]">Native driver (mssql)</div>
+                </div>
+              </button>
             </div>
           </div>
 
@@ -236,7 +272,7 @@ export const NewConnectionModal: React.FC<NewConnectionModalProps> = ({
                 <span>Quick Cloud / Local Presets</span>
               </span>
             </div>
-            <div className="flex items-center space-x-2">
+            <div className="flex items-center flex-wrap gap-2">
               <button
                 type="button"
                 onClick={() => handlePresetCloud('supabase')}
@@ -257,6 +293,13 @@ export const NewConnectionModal: React.FC<NewConnectionModalProps> = ({
                 className="px-2.5 py-1 rounded bg-[#21262d] hover:bg-[#30363d] text-[11px] text-[#c9d1d9] border border-[#30363d] transition-colors"
               >
                 AWS RDS
+              </button>
+              <button
+                type="button"
+                onClick={() => handlePresetCloud('azuresql')}
+                className="px-2.5 py-1 rounded bg-[#21262d] hover:bg-[#30363d] text-[11px] text-[#c9d1d9] border border-[#30363d] transition-colors"
+              >
+                Azure SQL
               </button>
               <button
                 type="button"
@@ -338,7 +381,7 @@ export const NewConnectionModal: React.FC<NewConnectionModalProps> = ({
                 required
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                placeholder="postgres or root"
+                placeholder="postgres, root, or sa"
                 className="w-full bg-[#0d1117] border border-[#30363d] rounded-lg px-3.5 py-2 text-xs text-white placeholder-[#8b949e] focus:outline-none focus:border-[#58a6ff] font-mono"
               />
             </div>

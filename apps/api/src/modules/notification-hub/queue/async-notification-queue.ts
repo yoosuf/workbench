@@ -33,8 +33,9 @@ export class AsyncNotificationQueue {
     this.queue.push(job);
     this.logger.log(`Enqueued background notification job [${type}] (${jobId})`);
 
-    // Non-blocking trigger on next tick
-    setImmediate(() => this.processNext());
+    // Non-blocking trigger on next tick — processNext() handles its own errors internally
+    // and is intentionally not awaited here.
+    setImmediate(() => void this.processNext());
     return jobId;
   }
 
@@ -48,8 +49,9 @@ export class AsyncNotificationQueue {
 
     this.activeWorkers++;
 
-    // Execute asynchronously
-    (async () => {
+    // Execute asynchronously — every error path below is caught internally, so this is
+    // deliberately not awaited (fire-and-forget worker execution).
+    void (async () => {
       try {
         job.attempts = (job.attempts || 0) + 1;
         await job.handler(job.payload);
@@ -63,13 +65,13 @@ export class AsyncNotificationQueue {
       } finally {
         this.activeWorkers--;
         // Process remaining queue items
-        setImmediate(() => this.processNext());
+        setImmediate(() => void this.processNext());
       }
     })();
 
     // Fill remaining concurrency slots
     if (this.activeWorkers < this.concurrency && this.queue.length > 0) {
-      setImmediate(() => this.processNext());
+      setImmediate(() => void this.processNext());
     }
   }
 

@@ -452,9 +452,9 @@ export const InteractiveDiagramCanvas: React.FC<InteractiveDiagramCanvasProps> =
       const dy = Math.abs(endY - startY);
 
       let cp1X: number;
-      let cp1Y = startY;
+      const cp1Y = startY;
       let cp2X: number;
-      let cp2Y = endY;
+      const cp2Y = endY;
 
       if (isTargetToRight && endX >= startX + 40) {
         // Direct clean horizontal S-curve

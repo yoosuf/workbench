@@ -101,7 +101,10 @@ export const SqlEditorPage: React.FC = () => {
     skip: !activeConnectionId,
   });
   const schemas = schemasData?.connectionSchemas || [];
-  const currentSchemaName = schemas[0]?.name || (connections.find(c => c.id === activeConnectionId)?.engine === 'MYSQL' ? 'sample_ecommerce' : 'public');
+  const activeEngine = connections.find(c => c.id === activeConnectionId)?.engine;
+  const currentSchemaName =
+    schemas[0]?.name ||
+    (activeEngine === 'MYSQL' ? 'sample_ecommerce' : activeEngine === 'MSSQL' ? 'dbo' : 'public');
 
   // Fetch Tables for Sidebar Navigator
   const { data: tablesData } = useQuery(SCHEMA_TABLES_QUERY, {
@@ -162,13 +165,13 @@ export const SqlEditorPage: React.FC = () => {
       if (res.data?.executeQuery) {
         setQueryResult(res.data.executeQuery);
         setActiveOutputTab('grid');
-        refetchHistory();
+        void refetchHistory();
       }
     } catch (err: any) {
       setQueryError(err.message || 'Query execution failed');
       setQueryResult(null);
       setActiveOutputTab('output');
-      refetchHistory();
+      void refetchHistory();
     }
   };
 
@@ -195,7 +198,7 @@ export const SqlEditorPage: React.FC = () => {
       });
       setSaveModalOpen(false);
       setSavedQueryName('');
-      refetchSaved();
+      void refetchSaved();
       setActiveOutputTab('saved');
     } catch (err: any) {
       alert(`Failed to save query: ${err.message}`);
@@ -206,7 +209,7 @@ export const SqlEditorPage: React.FC = () => {
   const handleDeleteSavedQuery = async (id: string) => {
     try {
       await deleteSavedQueryMutation({ variables: { id } });
-      refetchSaved();
+      void refetchSaved();
     } catch (err: any) {
       alert(`Error deleting saved query: ${err.message}`);
     }

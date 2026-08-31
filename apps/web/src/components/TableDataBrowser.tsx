@@ -93,7 +93,7 @@ export const TableDataBrowser: React.FC<TableDataBrowserProps> = ({
   };
 
   const handleCopyCell = (text: string, id: string) => {
-    navigator.clipboard.writeText(text);
+    void navigator.clipboard.writeText(text);
     setCopiedCell(id);
     setTimeout(() => setCopiedCell(null), 1500);
   };

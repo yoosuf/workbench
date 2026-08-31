@@ -40,7 +40,7 @@ export const Sidebar: React.FC = () => {
     }
     clearAuth();
     await apolloClient.clearStore();
-    navigate('/login');
+    void navigate('/login');
   };
 
   const navItems = [

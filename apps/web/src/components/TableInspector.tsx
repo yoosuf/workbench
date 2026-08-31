@@ -131,7 +131,7 @@ export const TableInspector: React.FC<TableInspectorProps> = ({
   };
 
   const handleCopyDdl = () => {
-    navigator.clipboard.writeText(generateDdl());
+    void navigator.clipboard.writeText(generateDdl());
     setDdlCopied(true);
     setTimeout(() => setDdlCopied(false), 1500);
   };
@@ -490,7 +490,7 @@ export const TableInspector: React.FC<TableInspectorProps> = ({
         schema={schema}
         tableName={table}
         onColumnAdded={() => {
-          refetch();
+          void refetch();
         }}
       />
     </div>

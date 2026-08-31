@@ -14,7 +14,7 @@ export class CreateConnectionInput {
   name: string;
 
   @Field(() => Engine)
-  @IsEnum(Engine, { message: 'Engine must be MYSQL or POSTGRES' })
+  @IsEnum(Engine, { message: 'Engine must be MYSQL, POSTGRES, or MSSQL' })
   engine: Engine;
 
   @Field(() => String)
@@ -58,7 +58,7 @@ export class CreateConnectionInput {
 @InputType()
 export class TestConnectionInput {
   @Field(() => Engine)
-  @IsEnum(Engine, { message: 'Engine must be MYSQL or POSTGRES' })
+  @IsEnum(Engine, { message: 'Engine must be MYSQL, POSTGRES, or MSSQL' })
   engine: Engine;
 
   @Field(() => String)

@@ -1,5 +1,6 @@
-import { PostgresDriver } from '../src/postgres/postgres.driver.js';
-import { MySqlDriver } from '../src/mysql/mysql.driver.js';
+import { PostgresDriver, closePostgresPools } from '../src/postgres/postgres.driver.js';
+import { MySqlDriver, closeMysqlPools } from '../src/mysql/mysql.driver.js';
+import { MssqlDriver, closeMssqlPools } from '../src/mssql/mssql.driver.js';
 import { ConnectionConfig } from '../src/types.js';
 
 async function testBothDrivers() {
@@ -21,8 +22,17 @@ async function testBothDrivers() {
     password: 'mysqlpassword',
   };
 
+  const mssqlConfig: ConnectionConfig = {
+    host: '127.0.0.1',
+    port: 1434,
+    database: 'sample_ecommerce',
+    username: 'sa',
+    password: 'MssqlPassword1!',
+  };
+
   const pgDriver = new PostgresDriver();
   const mysqlDriver = new MySqlDriver();
+  const mssqlDriver = new MssqlDriver();
 
   let passed = 0;
   let failed = 0;
@@ -99,11 +109,46 @@ async function testBothDrivers() {
     failed++;
   }
 
+  // 3. Test MSSQL Driver
+  console.log('\n--- 3. Testing MssqlDriver ---');
+  try {
+    const mssqlConn = await mssqlDriver.testConnection(mssqlConfig);
+    assert(mssqlConn === true, 'MSSQL testConnection succeeded');
+
+    const mssqlSchemas = await mssqlDriver.listSchemas(mssqlConfig);
+    assert(mssqlSchemas.includes('dbo'), 'MSSQL listSchemas includes dbo');
+
+    const mssqlTables = await mssqlDriver.listTables(mssqlConfig, 'dbo');
+    assert(mssqlTables.some(t => t.name === 'products'), 'MSSQL listTables found products table');
+
+    const mssqlCols = await mssqlDriver.getColumns(mssqlConfig, 'dbo', 'products');
+    assert(mssqlCols.some(c => c.name === 'sku' && c.dataKind === 'STRING'), 'MSSQL getColumns identified sku as STRING');
+
+    const mssqlPk = await mssqlDriver.getPrimaryKey(mssqlConfig, 'dbo', 'products');
+    assert(mssqlPk.includes('id'), 'MSSQL getPrimaryKey identified id');
+
+    const mssqlFks = await mssqlDriver.getForeignKeys(mssqlConfig, 'dbo', 'products');
+    assert(mssqlFks.some(fk => fk.referencedTable === 'categories'), 'MSSQL getForeignKeys found FK to categories');
+
+    const mssqlIdx = await mssqlDriver.getIndexes(mssqlConfig, 'dbo', 'products');
+    assert(mssqlIdx.length > 0, 'MSSQL getIndexes found indexes');
+
+    const mssqlQuery = await mssqlDriver.executeQuery(mssqlConfig, 'SELECT * FROM products', { timeoutMs: 5000, maxRows: 10 });
+    assert(mssqlQuery.rowCount > 0 && mssqlQuery.columns.includes('price'), 'MSSQL executeQuery returned rows');
+  } catch (err: any) {
+    console.error('MSSQL driver error:', err);
+    failed++;
+  }
+
   console.log(`\n========================================`);
   console.log(`Driver Tests: ${passed} passed, ${failed} failed`);
   console.log(`========================================\n`);
 
-  if (failed > 0) process.exit(1);
+  // Drivers now keep long-lived connection pools open across calls (see PoolCache); close
+  // them explicitly so this one-shot script can exit instead of hanging on open sockets.
+  await Promise.all([closePostgresPools(), closeMysqlPools(), closeMssqlPools()]);
+
+  process.exit(failed > 0 ? 1 : 0);
 }
 
 testBothDrivers();

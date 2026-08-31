@@ -77,18 +77,6 @@ export const SchemaTree: React.FC<SchemaTreeProps> = ({
 
   const schemas: { name: string }[] = schemasData?.connectionSchemas || [];
 
-  // Auto-expand the primary schema
-  useEffect(() => {
-    if (schemas.length > 0) {
-      const defaultSchema =
-        schemas.find((s) => s.name === 'public' || s.name === activeConnection?.database) ||
-        schemas[0];
-      if (defaultSchema && !expandedSchemas[defaultSchema.name]) {
-        toggleSchema(defaultSchema.name);
-      }
-    }
-  }, [schemasData]);
-
   const toggleSchema = async (schemaName: string) => {
     const isCurrentlyExpanded = !!expandedSchemas[schemaName];
     setExpandedSchemas((prev) => ({ ...prev, [schemaName]: !isCurrentlyExpanded }));
@@ -118,6 +106,18 @@ export const SchemaTree: React.FC<SchemaTreeProps> = ({
     }
   };
 
+  // Auto-expand the primary schema
+  useEffect(() => {
+    if (schemas.length > 0) {
+      const defaultSchema =
+        schemas.find((s) => s.name === 'public' || s.name === activeConnection?.database) ||
+        schemas[0];
+      if (defaultSchema && !expandedSchemas[defaultSchema.name]) {
+        void toggleSchema(defaultSchema.name);
+      }
+    }
+  }, [schemasData]);
+
   const handleRefresh = async () => {
     setTablesBySchema({});
     await refetchSchemas();
@@ -125,7 +125,7 @@ export const SchemaTree: React.FC<SchemaTreeProps> = ({
 
   const handleQuickQuery = (schema: string, table: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    navigate(
+    void navigate(
       `/editor?connectionId=${selectedConnectionId}&sql=${encodeURIComponent(
         `SELECT * FROM ${schema}.${table} LIMIT 1000;\n`,
       )}`,
@@ -346,8 +346,8 @@ export const SchemaTree: React.FC<SchemaTreeProps> = ({
         onClose={() => setIsCreateSchemaOpen(false)}
         connectionId={selectedConnectionId}
         onSchemaCreated={(newSchema) => {
-          handleRefresh();
-          toggleSchema(newSchema);
+          void handleRefresh();
+          void toggleSchema(newSchema);
         }}
       />
 
@@ -358,7 +358,7 @@ export const SchemaTree: React.FC<SchemaTreeProps> = ({
           connectionId={selectedConnectionId}
           schema={permSchema}
           onSchemaDropped={() => {
-            handleRefresh();
+            void handleRefresh();
             setPermSchema(null);
           }}
         />

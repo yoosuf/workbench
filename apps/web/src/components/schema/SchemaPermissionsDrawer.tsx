@@ -85,7 +85,7 @@ export const SchemaPermissionsDrawer: React.FC<SchemaPermissionsDrawerProps> = (
       onCompleted: () => {
         setSuccessMsg(`Granted "${selectedPrivilege}" to user "${selectedUser}"`);
         setError(null);
-        refetchPerms();
+        void refetchPerms();
         setTimeout(() => setSuccessMsg(null), 3000);
       },
       onError: (err) => setError(err.message),
@@ -98,7 +98,7 @@ export const SchemaPermissionsDrawer: React.FC<SchemaPermissionsDrawerProps> = (
       onCompleted: () => {
         setSuccessMsg('Permission revoked successfully');
         setError(null);
-        refetchPerms();
+        void refetchPerms();
         setTimeout(() => setSuccessMsg(null), 3000);
       },
       onError: (err) => setError(err.message),
@@ -121,7 +121,7 @@ export const SchemaPermissionsDrawer: React.FC<SchemaPermissionsDrawerProps> = (
       return;
     }
     setError(null);
-    grantPermission({
+    void grantPermission({
       variables: {
         input: {
           connectionId,
@@ -136,7 +136,7 @@ export const SchemaPermissionsDrawer: React.FC<SchemaPermissionsDrawerProps> = (
 
   const handleRevoke = (username: string, priv: string) => {
     if (confirm(`Revoke ${priv} privilege on schema "${schema}" for user "${username}"?`)) {
-      revokePermission({
+      void revokePermission({
         variables: {
           input: {
             connectionId,
@@ -155,7 +155,7 @@ export const SchemaPermissionsDrawer: React.FC<SchemaPermissionsDrawerProps> = (
         `Are you absolutely sure you want to drop schema "${schema}"? All tables and views in this schema will be deleted.`
       )
     ) {
-      dropSchema({
+      void dropSchema({
         variables: {
           input: {
             connectionId,

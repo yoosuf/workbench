@@ -68,7 +68,7 @@ export const InviteCollaboratorModal: React.FC<InviteCollaboratorModalProps> = (
   }).toString()}`;
 
   const handleCopyLink = () => {
-    navigator.clipboard.writeText(shareableUrl);
+    void navigator.clipboard.writeText(shareableUrl);
     setCopiedLink(true);
     setTimeout(() => setCopiedLink(false), 2000);
   };

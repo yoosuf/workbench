@@ -22,7 +22,7 @@ interface EditorState {
 const defaultInitialTab: EditorTab = {
   id: 'tab_1',
   title: 'Query 1',
-  sql: '-- Run SQL against PostgreSQL or MySQL\nSELECT * FROM products LIMIT 50;\n',
+  sql: '-- Run SQL against PostgreSQL, MySQL, or SQL Server\nSELECT * FROM products LIMIT 50;\n',
   connectionId: '',
 };
 

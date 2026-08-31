@@ -34,7 +34,7 @@ export const SignupPage: React.FC = () => {
       if (res.data?.signup) {
         const { accessToken, user } = res.data.signup;
         setAuth(accessToken, user);
-        navigate('/', { replace: true });
+        void navigate('/', { replace: true });
       }
     } catch (err: any) {
       setErrorMsg(err.message || 'Failed to create account. Please try again.');

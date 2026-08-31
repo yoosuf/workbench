@@ -3,7 +3,7 @@ import { Engine, ConnectionAccessLevel } from '@prisma/client';
 
 registerEnumType(Engine, {
   name: 'Engine',
-  description: 'Database Engine Type (MYSQL or POSTGRES)',
+  description: 'Database Engine Type (MYSQL, POSTGRES, or MSSQL)',
 });
 
 @ObjectType()
