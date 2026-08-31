@@ -16,6 +16,8 @@ A **modern, cloud-ready database management and visual design platform** built w
 - **Connection Management**: Secure database connection handling with encryption
 - **Schema Inspector**: Detailed schema analysis and validation tools
 - **SQL Engine**: Advanced query execution and result streaming
+- **🤖 AI Agent Support**: Model Context Protocol (MCP) integration for autonomous database management by Claude and other AI agents
+- **Agent Tools**: 30+ tools for schema discovery, query execution, performance analysis, and automation
 
 ## 🏆 Why Workbench? (vs. MySQL Workbench, DBeaver, Adminer)
 
@@ -222,6 +224,9 @@ The application will be available at:
 - [Project Discovery](./PROJECT_DISCOVERY.md) - Codebase navigation and structure
 - [Contributing Guidelines](./CONTRIBUTING.md) - How to contribute
 - [Setup Instructions](./SETUP.md) - Detailed setup and configuration
+- [MCP Integration Guide](./MCP_INTEGRATION.md) - AI agent integration via Model Context Protocol
+- [MCP Implementation Guide](./docs/MCP_IMPLEMENTATION.md) - How to implement MCP handlers
+- [Skills Documentation](./SKILLS.md) - Platform capabilities and features
 
 ## 🔧 Available Commands
 

@@ -1,0 +1,25 @@
+{
+  "name": "@workbench/mcp-server",
+  "version": "1.0.0",
+  "description": "Model Context Protocol (MCP) server for Workbench - enables AI agents to interact with databases",
+  "type": "module",
+  "main": "dist/mcp-server.js",
+  "types": "dist/mcp-server.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/mcp-server.ts",
+    "start": "node dist/mcp-server.js",
+    "lint": "eslint src",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "graphql": "^16.10.0",
+    "graphql-request": "^7.1.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.4",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
+  }
+}

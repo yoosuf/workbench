@@ -204,8 +204,9 @@ input DropTableInput {
   tableName: String!
 }
 
-"""Database Engine Type (MYSQL or POSTGRES)"""
+"""Database Engine Type (MYSQL, POSTGRES, or MSSQL)"""
 enum Engine {
+  MSSQL
   MYSQL
   POSTGRES
 }
